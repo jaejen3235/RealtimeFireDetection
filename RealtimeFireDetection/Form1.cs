@@ -29,6 +29,7 @@ namespace RealtimeFireDetection
         {
             InitializeComponent();
             detector = new YoloDetector("best_yolov5.onnx");
+            //rtsp://admin:dainlab12%21%40@192.168.45.19:554/H.264/media.smp
         }
 
         public WebEye.Stream Stream
@@ -71,7 +72,9 @@ namespace RealtimeFireDetection
             BeginInvoke(new MethodInvoker(delegate ()
             {
                 _currentFrame = e.Frame;
-
+                //Console.WriteLine("==========================>");
+                //Console.WriteLine("[{0}] {1}", DateTime.Now.ToString("yyyyMMdd HHmmss"), e.ToString());
+                //Console.WriteLine("==========================>");
                 if (_statusTextBox.Text != "Playing")
                 {
                     _statusTextBox.Text = "Playing";
@@ -86,8 +89,11 @@ namespace RealtimeFireDetection
             {
                 _statusTextBox.Text = "Stopped";
                 UpdateButtons();
+                Program.Delay(500);
+                btnStop.PerformClick();
+                Program.Delay(500);
+                btnPlay.PerformClick();
             }));
-
         }
 
         private void HandleStreamFailed(object sender, StreamFailedEventArgs e)
@@ -104,7 +110,6 @@ namespace RealtimeFireDetection
             btnPlay.Enabled = !string.IsNullOrEmpty(txtUrl.Text);
             btnStop.Enabled = Stream != null;
             btnCapture.Enabled = _currentFrame != null;
-
         }
 
         private void btnCapture_Click(object sender, EventArgs e)
@@ -161,23 +166,21 @@ namespace RealtimeFireDetection
 
         private void btnPlay_Click(object sender, EventArgs e)
         {
+            //public static Stream FromUri(Uri uri, TimeSpan connectionTimeout, TimeSpan streamTimeout, RtspTransport transport, RtspFlags flags);
 
             var uri = new Uri(txtUrl.Text);
+            //Stream = WebEye.Stream.FromUri(uri, new TimeSpan(0, 0, 0, 1), new TimeSpan(0, 0, 0, 1), RtspTransport.Http, RtspFlags.Listen);
             Stream = WebEye.Stream.FromUri(uri);
-
-            //streamControl1.AttachStream(Stream);
-
-            Stream.Start();
+            Stream?.Stop();
+            streamControl1.AttachStream(Stream);
+            Stream?.Start();
             _statusTextBox.Text = "Connecting...";
         }
 
         private void btnStop_Click(object sender, EventArgs e)
         {
-            if (timer1.Enabled)
-                timer1.Stop();
-
+            if (timer1.Enabled) timer1.Stop();
             Stream?.Stop();
-
         }
 
         private void Form1_Load(object sender, EventArgs e)
@@ -207,7 +210,6 @@ namespace RealtimeFireDetection
         {
             if (_statusTextBox.Text.Equals("Playing"))
             {
-
                 btnCapture.PerformClick();
             }
             remoteMessage = string.Format("Remote Message count: {0}", remoteMessageCount);
@@ -217,9 +219,7 @@ namespace RealtimeFireDetection
         private void Form1_FormClosed(object sender, FormClosedEventArgs e)
         {
             Stream?.Stop();
-
-            if (timer1.Enabled)
-                timer1.Stop();
+            if (timer1.Enabled) timer1.Stop();
         }
     }
 }
