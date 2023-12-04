@@ -24,12 +24,13 @@ namespace RealtimeFireDetection
         RemoteObject remoteObject;
         int remoteMessageCount;
         string remoteMessage;
+        Image flame;
 
         public Form1()
         {
             InitializeComponent();
             detector = new YoloDetector("best_yolov5.onnx");
-            //rtsp://admin:dainlab12%21%40@192.168.45.19:554/H.264/media.smp
+            //rtsp://admin:Dainlab2306@169.254.4.213:554/H.264/media.smp
         }
 
         public WebEye.Stream Stream
@@ -116,7 +117,18 @@ namespace RealtimeFireDetection
         {
             //_currentFrame?.Save("capture" + DateTime.Now.ToString("yyyyMMddHHmmss") + ".jpg", ImageFormat.Jpeg);
             Bitmap captureImg = (Bitmap)_currentFrame.Clone();
-            //pictureBox1.Image = captureImg;
+
+            Graphics g = Graphics.FromImage(captureImg);
+            g.DrawImage(flame, 450, 350, 100, 100);
+
+            int width = pictureBox1.Width;
+            int height = pictureBox1.Height;
+            System.Drawing.Size resize = new System.Drawing.Size(width, height);
+            Bitmap resizeImage = new Bitmap(captureImg, resize);
+            
+            pictureBox1.Image = resizeImage;
+
+
             using (var image = OpenCvSharp.Extensions.BitmapConverter.ToMat(captureImg))
             {
                 float ratio = 0.0f;
@@ -193,8 +205,9 @@ namespace RealtimeFireDetection
             this.Icon = Icon.FromHandle(Properties.Resources.Icon.GetHicon());
             DirectoryInfo di = new DirectoryInfo("../result");
 
-            if (di.Exists == false)
-                di.Create();
+            if (di.Exists == false) di.Create();
+
+            flame = Bitmap.FromFile(@"./flame01.png");
 
             btnPlay.PerformClick();
             timer1.Start();
@@ -211,9 +224,9 @@ namespace RealtimeFireDetection
             if (_statusTextBox.Text.Equals("Playing"))
             {
                 btnCapture.PerformClick();
+                remoteMessage = string.Format("Remote Message count: {0}", remoteMessageCount);
+                UpdateRemoteObject(remoteMessage);
             }
-            remoteMessage = string.Format("Remote Message count: {0}", remoteMessageCount);
-            UpdateRemoteObject(remoteMessage);
         }
 
         private void Form1_FormClosed(object sender, FormClosedEventArgs e)
