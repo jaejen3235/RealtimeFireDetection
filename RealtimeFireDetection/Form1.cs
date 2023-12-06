@@ -24,7 +24,9 @@ namespace RealtimeFireDetection
         RemoteObject remoteObject;
         int remoteMessageCount;
         string remoteMessage;
-        Image flame;
+        Image[] flame = new Image[3];
+        System.Drawing.Point flamePoint = new System.Drawing.Point();
+        Random random = new Random();
 
         public Form1()
         {
@@ -119,14 +121,19 @@ namespace RealtimeFireDetection
             Bitmap captureImg = (Bitmap)_currentFrame.Clone();
 
             Graphics g = Graphics.FromImage(captureImg);
-            g.DrawImage(flame, 450, 350, 100, 100);
 
-            int width = pictureBox1.Width;
-            int height = pictureBox1.Height;
+            if(flamePoint.X > 0)
+            {
+                Image image = flame[random.Next(0, 3)];
+                g.DrawImage(image, flamePoint.X, flamePoint.Y, image.Width, image.Height);
+            }
+
+            int width = pbScreen.Width;
+            int height = pbScreen.Height;
             System.Drawing.Size resize = new System.Drawing.Size(width, height);
             Bitmap resizeImage = new Bitmap(captureImg, resize);
             
-            pictureBox1.Image = resizeImage;
+            pbScreen.Image = resizeImage;
 
 
             using (var image = OpenCvSharp.Extensions.BitmapConverter.ToMat(captureImg))
@@ -142,28 +149,31 @@ namespace RealtimeFireDetection
                 {
                     if (result.Count > 0)
                     {
-                        StreamWriter writer;
-                        writer = File.CreateText("../result/result_" + strNow + ".txt");
-                        foreach (var obj in result)
-                        {
-                            Cv2.Rectangle(dispImage, new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin), new OpenCvSharp.Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 2);
-                            Cv2.PutText(dispImage, obj.Label + " " + obj.Confidence.ToString("F2"), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
-                            //writer.WriteLine(obj.Box.Xmin + ", " + obj.Box.Xmax + "," + obj.Box.Ymin + "," + obj.Box.Ymax + "," + obj.Confidence.ToString("F2"));
-                            remoteMessage = Math.Floor(obj.Box.Xmin + (obj.Box.Xmax - obj.Box.Xmin) * 0.5) + "," + // 중심점 x 좌표
-                                Math.Floor(obj.Box.Ymin + (obj.Box.Ymax - obj.Box.Ymin) * 0.5) + "," + // 중심점 y 좌표
-                                Math.Floor((obj.Box.Xmax - obj.Box.Xmin)) + "," +                      // 영역 가로 길이
-                                Math.Floor((obj.Box.Ymax - obj.Box.Ymin)) + "," +                      // 영역 세로 길이
-                                obj.Confidence.ToString("F2");
-                            writer.WriteLine(remoteMessage);
+                        //StreamWriter writer;
+                        //writer = File.CreateText("../result/result_" + strNow + ".txt");
+                        //foreach (var obj in result)
+                        //{
+                        //    Cv2.Rectangle(dispImage, new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin), new OpenCvSharp.Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 2);
+                        //    Cv2.PutText(dispImage, obj.Label + " " + obj.Confidence.ToString("F2"), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
+                        //    //writer.WriteLine(obj.Box.Xmin + ", " + obj.Box.Xmax + "," + obj.Box.Ymin + "," + obj.Box.Ymax + "," + obj.Confidence.ToString("F2"));
+                        //    remoteMessage = Math.Floor(obj.Box.Xmin + (obj.Box.Xmax - obj.Box.Xmin) * 0.5) + "," + // 중심점 x 좌표
+                        //        Math.Floor(obj.Box.Ymin + (obj.Box.Ymax - obj.Box.Ymin) * 0.5) + "," + // 중심점 y 좌표
+                        //        Math.Floor((obj.Box.Xmax - obj.Box.Xmin)) + "," +                      // 영역 가로 길이
+                        //        Math.Floor((obj.Box.Ymax - obj.Box.Ymin)) + "," +                      // 영역 세로 길이
+                        //        obj.Confidence.ToString("F2");
+                        //    writer.WriteLine(remoteMessage);
 
-                            UpdateRemoteObject("DETECT," + remoteMessage + "," + strNow);
-                        }
-                        writer.Close();
+                        //    UpdateRemoteObject("DETECT," + remoteMessage + "," + strNow);
+                        //}
+                        //writer.Close();
 
-                        //Cv2.NamedWindow("RESULT", WindowFlags.AutoSize);
-                        //Cv2.ImShow("RESULT", dispImage);
-                        Bitmap bmpResult = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dispImage);
-                        bmpResult.Save("../result/img_" + strNow + ".jpg", ImageFormat.Jpeg);
+                        ////Cv2.NamedWindow("RESULT", WindowFlags.AutoSize);
+                        ////Cv2.ImShow("RESULT", dispImage);
+                        //Bitmap bmpResult = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dispImage);
+                        //bmpResult.Save("../result/img_" + strNow + ".jpg", ImageFormat.Jpeg);
+
+
+
                         txtResult.Text = "Detect Fire " + result.Count;
                         UpdateRemoteObject("FIRE," + strNow);
                     }
@@ -207,8 +217,9 @@ namespace RealtimeFireDetection
 
             if (di.Exists == false) di.Create();
 
-            flame = Bitmap.FromFile(@"./flame01.png");
-
+            flame[0] = Bitmap.FromFile(@"./flame01.png");
+            flame[1] = Bitmap.FromFile(@"./flame11.png");
+            flame[2] = Bitmap.FromFile(@"./flame04.png");
             btnPlay.PerformClick();
             timer1.Start();
         }
@@ -233,6 +244,18 @@ namespace RealtimeFireDetection
         {
             Stream?.Stop();
             if (timer1.Enabled) timer1.Stop();
+        }
+
+        private void streamControl1_MouseUp(object sender, MouseEventArgs e)
+        {
+            flamePoint.X = e.X;
+            flamePoint.Y = e.Y;
+        }
+
+        private void streamControl1_DoubleClick(object sender, EventArgs e)
+        {
+            flamePoint.X = -1;
+            flamePoint.Y = -1;
         }
     }
 }

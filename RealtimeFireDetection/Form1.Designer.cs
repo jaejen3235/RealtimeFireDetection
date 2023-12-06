@@ -39,11 +39,11 @@ namespace RealtimeFireDetection
             this.txtResult = new System.Windows.Forms.TextBox();
             this.streamControl1 = new WebEye.StreamControl.WinForms.StreamControl();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
+            this.pbScreen = new System.Windows.Forms.PictureBox();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
-            this.pictureBox1 = new System.Windows.Forms.PictureBox();
             this.groupBox1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.pbScreen)).BeginInit();
             this.groupBox2.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             this.SuspendLayout();
             // 
             // btnCapture
@@ -115,19 +115,29 @@ namespace RealtimeFireDetection
             this.streamControl1.PreserveStreamAspectRatio = false;
             this.streamControl1.Size = new System.Drawing.Size(492, 263);
             this.streamControl1.TabIndex = 18;
+            this.streamControl1.DoubleClick += new System.EventHandler(this.streamControl1_DoubleClick);
+            this.streamControl1.MouseUp += new System.Windows.Forms.MouseEventHandler(this.streamControl1_MouseUp);
             // 
             // groupBox1
             // 
             this.groupBox1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.groupBox1.Controls.Add(this.pictureBox1);
+            this.groupBox1.Controls.Add(this.pbScreen);
             this.groupBox1.Controls.Add(this.streamControl1);
             this.groupBox1.Location = new System.Drawing.Point(7, 12);
             this.groupBox1.Name = "groupBox1";
-            this.groupBox1.Size = new System.Drawing.Size(1167, 287);
+            this.groupBox1.Size = new System.Drawing.Size(994, 287);
             this.groupBox1.TabIndex = 19;
             this.groupBox1.TabStop = false;
+            // 
+            // pbScreen
+            // 
+            this.pbScreen.Location = new System.Drawing.Point(505, 19);
+            this.pbScreen.Name = "pbScreen";
+            this.pbScreen.Size = new System.Drawing.Size(481, 262);
+            this.pbScreen.TabIndex = 19;
+            this.pbScreen.TabStop = false;
             // 
             // groupBox2
             // 
@@ -141,24 +151,16 @@ namespace RealtimeFireDetection
             this.groupBox2.Controls.Add(this.btnStop);
             this.groupBox2.Location = new System.Drawing.Point(7, 305);
             this.groupBox2.Name = "groupBox2";
-            this.groupBox2.Size = new System.Drawing.Size(1167, 119);
+            this.groupBox2.Size = new System.Drawing.Size(994, 119);
             this.groupBox2.TabIndex = 20;
             this.groupBox2.TabStop = false;
-            // 
-            // pictureBox1
-            // 
-            this.pictureBox1.Location = new System.Drawing.Point(505, 19);
-            this.pictureBox1.Name = "pictureBox1";
-            this.pictureBox1.Size = new System.Drawing.Size(481, 262);
-            this.pictureBox1.TabIndex = 19;
-            this.pictureBox1.TabStop = false;
             // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.SystemColors.Control;
-            this.ClientSize = new System.Drawing.Size(1180, 429);
+            this.ClientSize = new System.Drawing.Size(1007, 429);
             this.Controls.Add(this.groupBox2);
             this.Controls.Add(this.groupBox1);
             this.Name = "Form1";
@@ -167,9 +169,9 @@ namespace RealtimeFireDetection
             this.Load += new System.EventHandler(this.Form1_Load);
             this.groupBox1.ResumeLayout(false);
             this.groupBox1.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.pbScreen)).EndInit();
             this.groupBox2.ResumeLayout(false);
             this.groupBox2.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
             this.ResumeLayout(false);
 
         }
@@ -186,7 +188,7 @@ namespace RealtimeFireDetection
         private WebEye.StreamControl.WinForms.StreamControl streamControl1;
         private System.Windows.Forms.GroupBox groupBox1;
         private System.Windows.Forms.GroupBox groupBox2;
-        private System.Windows.Forms.PictureBox pictureBox1;
+        private System.Windows.Forms.PictureBox pbScreen;
     }
 }
 
