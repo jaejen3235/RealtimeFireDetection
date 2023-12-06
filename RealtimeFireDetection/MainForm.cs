@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -50,6 +51,15 @@ namespace RealtimeFireDetection
 
         DateTime receivedEventTime = DateTime.Now;
 
+        enum DetectorState
+        {
+            NO_FIRE,
+            DETECT_FLAME,
+            MONITORING_FIRE,
+            ALERT
+        }
+        DetectorState detectorState = DetectorState.NO_FIRE;
+
         public MainForm()
         {
             InitializeComponent();
@@ -66,33 +76,31 @@ namespace RealtimeFireDetection
             string msg = "";
             string strNow = DateTime.Now.ToString("yyyyMMddHHmmss");
             //var dispImage = image.Clone();
+
             if (result.Count > 0)
             {
-                //StreamWriter writer;
-                //writer = File.CreateText("../result/result_" + strNow + ".txt");
-                //foreach (var obj in result)
-                //{
-                //    Cv2.Rectangle(dispImage, new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin), new OpenCvSharp.Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 2);
-                //    Cv2.PutText(dispImage, obj.Label + " " + obj.Confidence.ToString("F2"), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
-                //    //writer.WriteLine(obj.Box.Xmin + ", " + obj.Box.Xmax + "," + obj.Box.Ymin + "," + obj.Box.Ymax + "," + obj.Confidence.ToString("F2"));
-                //    remoteMessage = Math.Floor(obj.Box.Xmin + (obj.Box.Xmax - obj.Box.Xmin) * 0.5) + "," + // 중심점 x 좌표
-                //        Math.Floor(obj.Box.Ymin + (obj.Box.Ymax - obj.Box.Ymin) * 0.5) + "," + // 중심점 y 좌표
-                //        Math.Floor((obj.Box.Xmax - obj.Box.Xmin)) + "," +                      // 영역 가로 길이
-                //        Math.Floor((obj.Box.Ymax - obj.Box.Ymin)) + "," +                      // 영역 세로 길이
-                //        obj.Confidence.ToString("F2");
-                //    writer.WriteLine(remoteMessage);
+                StreamWriter writer;
+                writer = File.CreateText(targetFirePath + "/result_" + strNow + ".txt");
+                foreach (var obj in result)
+                {
+                    Cv2.Rectangle(image, new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin), new OpenCvSharp.Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 2);
+                    Cv2.PutText(image, obj.Label + " " + obj.Confidence.ToString("F2"), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
+                    //writer.WriteLine(obj.Box.Xmin + ", " + obj.Box.Xmax + "," + obj.Box.Ymin + "," + obj.Box.Ymax + "," + obj.Confidence.ToString("F2"));
+                    string tmp = Math.Floor(obj.Box.Xmin + (obj.Box.Xmax - obj.Box.Xmin) * 0.5) + "," + // 중심점 x 좌표
+                        Math.Floor(obj.Box.Ymin + (obj.Box.Ymax - obj.Box.Ymin) * 0.5) + "," + // 중심점 y 좌표
+                        Math.Floor((obj.Box.Xmax - obj.Box.Xmin)) + "," +                      // 영역 가로 길이
+                        Math.Floor((obj.Box.Ymax - obj.Box.Ymin)) + "," +                      // 영역 세로 길이
+                        obj.Confidence.ToString("F2");
+                    writer.WriteLine(tmp);
+                }
+                writer.Close();
 
-                //    UpdateRemoteObject("DETECT," + remoteMessage + "," + strNow);
-                //}
-                //writer.Close();
+                //Cv2.NamedWindow("RESULT", WindowFlags.AutoSize);
+                //Cv2.ImShow("RESULT", dispImage);
+                Bitmap bmpResult = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
+                bmpResult.Save(targetFirePath + "/img_" + strNow + ".jpg", ImageFormat.Jpeg);
 
-                ////Cv2.NamedWindow("RESULT", WindowFlags.AutoSize);
-                ////Cv2.ImShow("RESULT", dispImage);
-                //Bitmap bmpResult = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dispImage);
-                //bmpResult.Save("./result/img_" + strNow + ".jpg", ImageFormat.Jpeg);
-
-
-
+                detectorState = DetectorState.DETECT_FLAME;
                 msg = string.Format("Detect:{0}", result.Count);
                 Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] Detected fire: {0} ", result.Count), true);
                 AddLogMessage(message);
@@ -132,16 +140,6 @@ namespace RealtimeFireDetection
                     {
                         string dt = DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff");
                         string fdt = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                        //Console.WriteLine("Mat size {0}, {1}", image.Height, image.Width);
-                        //if (isFirstFrame)
-                        //{
-                        //    isFirstFrame = false;
-                        //    vWriter = new VideoWriter(targetRecordPath + "/BB_" + fdt + ".avi", FourCC.XVID, 24, image.Size());
-                        //    tickCount = 0;
-                        //    LogMessage msg;
-                        //    Logger.Logger.WriteLog(out msg, LogType.Info, "Create a new BB_" + fdt + ".avi", true);
-                        //    AddLogMessage(msg);
-                        //}
                         drawAnyOnTheMat(image, dt);
                         if (drawFlame)
                         {
@@ -155,36 +153,38 @@ namespace RealtimeFireDetection
                         bmp = new Bitmap(bmp, resize);
                         pbScreen.Image = bmp;
 
-                        //if (tickCount >= (recordDuration * 10))
-                        //{
-                        //    vWriter.Release();
-                        //    LogMessage msg;
-                        //    Logger.Logger.WriteLog(out msg, LogType.Info, "Changed the BB_" + fdt + ".avi", true);
-                        //    AddLogMessage(msg);
-                        //    isFirstFrame = true;
-                        //}
-                        //else
-                        //{
-                        //    try
-                        //    {
-                        //        vWriter.Write(image);
-                        //    }
-                        //    catch (Exception e)
-                        //    {
-                        //        if (vWriter != null) vWriter.Release();
-                        //        isFirstFrame = true;
-                        //    }
-                        //}
-
                         if (stopwatch.ElapsedMilliseconds > 1000 * fireCheckDuration)
                         {
                             stopwatch.Stop();
                             //Logger.Logger.WriteLog(out message, LogType.Info, "[YOLO] Start image analysis", true);
                             //AddLogMessage(message);
-                            Thread t = new Thread(() => {
-                                resultMsg = checkFlame(matImage.Clone());
-                            });
-                            t.Start();
+
+                            Thread t;
+
+                            switch (detectorState)
+                            {
+                                case DetectorState.NO_FIRE:
+                                    t = new Thread(() => {
+                                        Console.WriteLine("DetectorState.NO_FIRE");
+                                        resultMsg = checkFlame(matImage.Clone());
+                                    });
+                                    t.Start();
+                                    break;
+                                case DetectorState.DETECT_FLAME:
+
+                                    break;
+                                
+                                case DetectorState.MONITORING_FIRE:
+
+                                    break;
+                                
+                                case DetectorState.ALERT:
+
+                                    break;
+                            }
+                            
+                            
+                            
                             stopwatch.Reset();
                             stopwatch.Start();
                         }

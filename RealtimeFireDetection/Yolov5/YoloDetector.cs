@@ -46,7 +46,6 @@ namespace RealtimeFireDetection.Yolov5
             float ratio = 0.0f;
             Point diff1 = new Point();
             Point diff2 = new Point();
-            List<Prediction> obj_list = new List<Prediction>();
             //Image -> Letterbox
             bool isAuto = true;
             if (img.Width <= imgSize.Width || img.Height <= imgSize.Height) isAuto = false;

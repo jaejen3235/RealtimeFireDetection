@@ -149,28 +149,28 @@ namespace RealtimeFireDetection
                 {
                     if (result.Count > 0)
                     {
-                        //StreamWriter writer;
-                        //writer = File.CreateText("../result/result_" + strNow + ".txt");
-                        //foreach (var obj in result)
-                        //{
-                        //    Cv2.Rectangle(dispImage, new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin), new OpenCvSharp.Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 2);
-                        //    Cv2.PutText(dispImage, obj.Label + " " + obj.Confidence.ToString("F2"), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
-                        //    //writer.WriteLine(obj.Box.Xmin + ", " + obj.Box.Xmax + "," + obj.Box.Ymin + "," + obj.Box.Ymax + "," + obj.Confidence.ToString("F2"));
-                        //    remoteMessage = Math.Floor(obj.Box.Xmin + (obj.Box.Xmax - obj.Box.Xmin) * 0.5) + "," + // 중심점 x 좌표
-                        //        Math.Floor(obj.Box.Ymin + (obj.Box.Ymax - obj.Box.Ymin) * 0.5) + "," + // 중심점 y 좌표
-                        //        Math.Floor((obj.Box.Xmax - obj.Box.Xmin)) + "," +                      // 영역 가로 길이
-                        //        Math.Floor((obj.Box.Ymax - obj.Box.Ymin)) + "," +                      // 영역 세로 길이
-                        //        obj.Confidence.ToString("F2");
-                        //    writer.WriteLine(remoteMessage);
+                        StreamWriter writer;
+                        writer = File.CreateText("../result/result_" + strNow + ".txt");
+                        foreach (var obj in result)
+                        {
+                            Cv2.Rectangle(dispImage, new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin), new OpenCvSharp.Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 2);
+                            Cv2.PutText(dispImage, obj.Label + " " + obj.Confidence.ToString("F2"), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
+                            //writer.WriteLine(obj.Box.Xmin + ", " + obj.Box.Xmax + "," + obj.Box.Ymin + "," + obj.Box.Ymax + "," + obj.Confidence.ToString("F2"));
+                            remoteMessage = Math.Floor(obj.Box.Xmin + (obj.Box.Xmax - obj.Box.Xmin) * 0.5) + "," + // 중심점 x 좌표
+                                Math.Floor(obj.Box.Ymin + (obj.Box.Ymax - obj.Box.Ymin) * 0.5) + "," + // 중심점 y 좌표
+                                Math.Floor((obj.Box.Xmax - obj.Box.Xmin)) + "," +                      // 영역 가로 길이
+                                Math.Floor((obj.Box.Ymax - obj.Box.Ymin)) + "," +                      // 영역 세로 길이
+                                obj.Confidence.ToString("F2");
+                            writer.WriteLine(remoteMessage);
 
-                        //    UpdateRemoteObject("DETECT," + remoteMessage + "," + strNow);
-                        //}
-                        //writer.Close();
+                            UpdateRemoteObject("DETECT," + remoteMessage + "," + strNow);
+                        }
+                        writer.Close();
 
-                        ////Cv2.NamedWindow("RESULT", WindowFlags.AutoSize);
-                        ////Cv2.ImShow("RESULT", dispImage);
-                        //Bitmap bmpResult = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dispImage);
-                        //bmpResult.Save("../result/img_" + strNow + ".jpg", ImageFormat.Jpeg);
+                        //Cv2.NamedWindow("RESULT", WindowFlags.AutoSize);
+                        //Cv2.ImShow("RESULT", dispImage);
+                        Bitmap bmpResult = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dispImage);
+                        bmpResult.Save("../result/img_" + strNow + ".jpg", ImageFormat.Jpeg);
 
 
 
