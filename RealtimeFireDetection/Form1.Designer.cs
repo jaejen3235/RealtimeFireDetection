@@ -113,7 +113,7 @@ namespace RealtimeFireDetection
             this.streamControl1.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.streamControl1.Name = "streamControl1";
             this.streamControl1.PreserveStreamAspectRatio = false;
-            this.streamControl1.Size = new System.Drawing.Size(492, 263);
+            this.streamControl1.Size = new System.Drawing.Size(492, 295);
             this.streamControl1.TabIndex = 18;
             this.streamControl1.DoubleClick += new System.EventHandler(this.streamControl1_DoubleClick);
             this.streamControl1.MouseUp += new System.Windows.Forms.MouseEventHandler(this.streamControl1_MouseUp);
@@ -127,7 +127,7 @@ namespace RealtimeFireDetection
             this.groupBox1.Controls.Add(this.streamControl1);
             this.groupBox1.Location = new System.Drawing.Point(7, 12);
             this.groupBox1.Name = "groupBox1";
-            this.groupBox1.Size = new System.Drawing.Size(994, 287);
+            this.groupBox1.Size = new System.Drawing.Size(1037, 319);
             this.groupBox1.TabIndex = 19;
             this.groupBox1.TabStop = false;
             // 
@@ -149,9 +149,9 @@ namespace RealtimeFireDetection
             this.groupBox2.Controls.Add(this.btnPlay);
             this.groupBox2.Controls.Add(this.btnCapture);
             this.groupBox2.Controls.Add(this.btnStop);
-            this.groupBox2.Location = new System.Drawing.Point(7, 305);
+            this.groupBox2.Location = new System.Drawing.Point(7, 337);
             this.groupBox2.Name = "groupBox2";
-            this.groupBox2.Size = new System.Drawing.Size(994, 119);
+            this.groupBox2.Size = new System.Drawing.Size(1037, 119);
             this.groupBox2.TabIndex = 20;
             this.groupBox2.TabStop = false;
             // 
@@ -160,7 +160,7 @@ namespace RealtimeFireDetection
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.SystemColors.Control;
-            this.ClientSize = new System.Drawing.Size(1007, 429);
+            this.ClientSize = new System.Drawing.Size(1050, 461);
             this.Controls.Add(this.groupBox2);
             this.Controls.Add(this.groupBox1);
             this.Name = "Form1";
