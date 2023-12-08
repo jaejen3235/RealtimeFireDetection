@@ -99,31 +99,23 @@ namespace RealtimeFireDetection
             Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
             Graphics g = Graphics.FromImage(bmp);
             string[] tmps = sb.ToString().Trim().Split('/');
-            int h0 = 0;
-            int h1 = 0;
 
             if (save)
             {
-                writer = File.CreateText(targetFirePath + "/" + APP_NAME + "_" + level + "_result_" + strNow + ".txt");
+                writer = File.CreateText(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_result" + ".txt");
                 Font fnt = new Font("Arial", 12, FontStyle.Bold);
                 int cnt = 1;
                 foreach (string s in tmps)
                 {
                     if (s == null || s.Length == 0) break;
                     writer.WriteLine(s);
-                    
                     string[] ss = s.Trim().Split(',');
-                    foreach (string ks in ss)
-                    {
-                        if (ks == null || ks.Length == 0) break;
-                        Console.WriteLine("Draw flame info: " + ks);
-                    }
-                    string sw = string.Format("위치{0:D2} X:{1}  Y:{2}  W:{3}  H:{4}  Confidence:{5:0.00}", cnt++, ss[0], ss[1], ss[2], ss[3], ss[4]);
-                    g.DrawString(sw, fnt, new SolidBrush(Color.Black), 12, h0 += 62);
-                    g.DrawString(sw, fnt, new SolidBrush(Color.Yellow), 10, h1 += 60);
+                    string sw = string.Format("Location {0:D2} X:{1}  Y:{2}  W:{3}  H:{4}  Confidence:{5:0.00}", cnt++, ss[0], ss[1], ss[2], ss[3], ss[4]);
+                    g.DrawString(sw, fnt, new SolidBrush(Color.Black), 12, cnt * 30 + 2);
+                    g.DrawString(sw, fnt, new SolidBrush(Color.Yellow), 10, cnt * 30);
                 }
                 writer.Close();
-                bmp.Save(targetFirePath + "/" + APP_NAME + "_" + level + "_img_" + strNow + ".jpg", ImageFormat.Jpeg);
+                bmp.Save(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_snapshot.jpg", ImageFormat.Jpeg);
             }
             return bmp;
         }
@@ -361,7 +353,12 @@ namespace RealtimeFireDetection
             public FlameZone(Rectangle zone)
             {
                 this.zone = zone;
-                DiagonalLength = Math.Sqrt(Math.Pow(this.zone.Width, 2) + Math.Pow(this.zone.Height, 2));
+                DiagonalLength = Pythagoras(this.zone.Width, this.zone.Height);
+            }
+
+            public double Pythagoras(int w, int h)
+            {
+                return Math.Sqrt(Math.Pow(w, 2) + Math.Pow(h, 2));
             }
 
             public bool IsSameFlame(Rectangle rec)
@@ -376,12 +373,13 @@ namespace RealtimeFireDetection
             Graphics bg = Graphics.FromImage(background);
             
             Random random = new Random();
-            Image flameImage = flame[random.Next(0, 4)];
+            Image flameImage;
             //Image flameImage = flame[2];
             lock (flameListLock)
             {
                 foreach(System.Drawing.Point p in flameList)
                 {
+                    flameImage = flame[random.Next(0, 4)];
                     bg.DrawImage(flameImage, p.X - (flameImage.Width / 2), p.Y - (flameImage.Height / 2), flameImage.Width, flameImage.Height);
                 }
             }
@@ -500,7 +498,9 @@ namespace RealtimeFireDetection
 
         private void pbScreen_MouseClick(object sender, MouseEventArgs e)
         {
-            if(e.Button == MouseButtons.Left)
+            if (!cbVitualFlame.Checked) return;
+
+            if (e.Button == MouseButtons.Left)
             {
                 lock (flameListLock)
                 {
@@ -566,6 +566,11 @@ namespace RealtimeFireDetection
             Logger.Logger.WriteLog(out message, LogType.Info, string.Format("{0}", "Acknowledge fire"), true);
             AddLogMessage(message);
             resetState();
+        }
+
+        private void cbVitualFlame_CheckedChanged(object sender, EventArgs e)
+        {
+            //cbVitualFlame.Checked;
         }
     }
 }

@@ -30,25 +30,25 @@ namespace RealtimeFireDetection
         private void InitializeComponent()
         {
             this.groupBox1 = new System.Windows.Forms.GroupBox();
+            this.groupBox6 = new System.Windows.Forms.GroupBox();
+            this.button3 = new System.Windows.Forms.Button();
             this.groupBox5 = new System.Windows.Forms.GroupBox();
+            this.cbVitualFlame = new System.Windows.Forms.CheckBox();
+            this.button1 = new System.Windows.Forms.Button();
             this.groupBox4 = new System.Windows.Forms.GroupBox();
             this.pbResult = new System.Windows.Forms.PictureBox();
             this.groupBox3 = new System.Windows.Forms.GroupBox();
             this.pbScreen = new System.Windows.Forms.PictureBox();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
             this.lbLog = new System.Windows.Forms.ListBox();
-            this.groupBox6 = new System.Windows.Forms.GroupBox();
-            this.button3 = new System.Windows.Forms.Button();
-            this.button1 = new System.Windows.Forms.Button();
-            this.cbVitualFlame = new System.Windows.Forms.CheckBox();
             this.groupBox1.SuspendLayout();
+            this.groupBox6.SuspendLayout();
             this.groupBox5.SuspendLayout();
             this.groupBox4.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pbResult)).BeginInit();
             this.groupBox3.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pbScreen)).BeginInit();
             this.groupBox2.SuspendLayout();
-            this.groupBox6.SuspendLayout();
             this.SuspendLayout();
             // 
             // groupBox1
@@ -64,6 +64,25 @@ namespace RealtimeFireDetection
             this.groupBox1.TabStop = false;
             this.groupBox1.Text = "영상";
             // 
+            // groupBox6
+            // 
+            this.groupBox6.Controls.Add(this.button3);
+            this.groupBox6.Location = new System.Drawing.Point(684, 422);
+            this.groupBox6.Name = "groupBox6";
+            this.groupBox6.Size = new System.Drawing.Size(668, 57);
+            this.groupBox6.TabIndex = 11;
+            this.groupBox6.TabStop = false;
+            // 
+            // button3
+            // 
+            this.button3.Location = new System.Drawing.Point(10, 20);
+            this.button3.Name = "button3";
+            this.button3.Size = new System.Drawing.Size(84, 29);
+            this.button3.TabIndex = 10;
+            this.button3.Text = "ACK.Fire";
+            this.button3.UseVisualStyleBackColor = true;
+            this.button3.Click += new System.EventHandler(this.button3_Click);
+            // 
             // groupBox5
             // 
             this.groupBox5.Controls.Add(this.cbVitualFlame);
@@ -73,6 +92,27 @@ namespace RealtimeFireDetection
             this.groupBox5.Size = new System.Drawing.Size(668, 57);
             this.groupBox5.TabIndex = 10;
             this.groupBox5.TabStop = false;
+            // 
+            // cbVitualFlame
+            // 
+            this.cbVitualFlame.AutoSize = true;
+            this.cbVitualFlame.Location = new System.Drawing.Point(569, 27);
+            this.cbVitualFlame.Name = "cbVitualFlame";
+            this.cbVitualFlame.Size = new System.Drawing.Size(76, 16);
+            this.cbVitualFlame.TabIndex = 10;
+            this.cbVitualFlame.Text = "가상 화염";
+            this.cbVitualFlame.UseVisualStyleBackColor = true;
+            this.cbVitualFlame.CheckedChanged += new System.EventHandler(this.cbVitualFlame_CheckedChanged);
+            // 
+            // button1
+            // 
+            this.button1.Location = new System.Drawing.Point(10, 20);
+            this.button1.Name = "button1";
+            this.button1.Size = new System.Drawing.Size(84, 29);
+            this.button1.TabIndex = 9;
+            this.button1.Text = "Clear Flame";
+            this.button1.UseVisualStyleBackColor = true;
+            this.button1.Click += new System.EventHandler(this.button1_Click);
             // 
             // groupBox4
             // 
@@ -137,45 +177,6 @@ namespace RealtimeFireDetection
             this.lbLog.Size = new System.Drawing.Size(1345, 292);
             this.lbLog.TabIndex = 0;
             // 
-            // groupBox6
-            // 
-            this.groupBox6.Controls.Add(this.button3);
-            this.groupBox6.Location = new System.Drawing.Point(684, 422);
-            this.groupBox6.Name = "groupBox6";
-            this.groupBox6.Size = new System.Drawing.Size(668, 57);
-            this.groupBox6.TabIndex = 11;
-            this.groupBox6.TabStop = false;
-            // 
-            // button3
-            // 
-            this.button3.Location = new System.Drawing.Point(10, 20);
-            this.button3.Name = "button3";
-            this.button3.Size = new System.Drawing.Size(84, 29);
-            this.button3.TabIndex = 10;
-            this.button3.Text = "ACK.Fire";
-            this.button3.UseVisualStyleBackColor = true;
-            this.button3.Click += new System.EventHandler(this.button3_Click);
-            // 
-            // button1
-            // 
-            this.button1.Location = new System.Drawing.Point(10, 20);
-            this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(84, 29);
-            this.button1.TabIndex = 9;
-            this.button1.Text = "Clear Flame";
-            this.button1.UseVisualStyleBackColor = true;
-            this.button1.Click += new System.EventHandler(this.button1_Click);
-            // 
-            // cbVitualFlame
-            // 
-            this.cbVitualFlame.AutoSize = true;
-            this.cbVitualFlame.Location = new System.Drawing.Point(569, 27);
-            this.cbVitualFlame.Name = "cbVitualFlame";
-            this.cbVitualFlame.Size = new System.Drawing.Size(76, 16);
-            this.cbVitualFlame.TabIndex = 10;
-            this.cbVitualFlame.Text = "가상 화염";
-            this.cbVitualFlame.UseVisualStyleBackColor = true;
-            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 12F);
@@ -191,6 +192,7 @@ namespace RealtimeFireDetection
             this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.MainForm_FormClosed);
             this.Load += new System.EventHandler(this.MainForm_Load);
             this.groupBox1.ResumeLayout(false);
+            this.groupBox6.ResumeLayout(false);
             this.groupBox5.ResumeLayout(false);
             this.groupBox5.PerformLayout();
             this.groupBox4.ResumeLayout(false);
@@ -198,7 +200,6 @@ namespace RealtimeFireDetection
             this.groupBox3.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.pbScreen)).EndInit();
             this.groupBox2.ResumeLayout(false);
-            this.groupBox6.ResumeLayout(false);
             this.ResumeLayout(false);
 
         }
