@@ -42,7 +42,7 @@ namespace RealtimeFireDetection
         private int fireCheckDuration = 10;
         private int recordDuration = 10;
         private int NO_FIRE_WAIT_TIME = 10;
-        private double STANDARD_DEVIATION_LOW_LIMIT = 1.0;
+        public static double STANDARD_DEVIATION_LOW_LIMIT = 1.0;
         IniFile ini;
         string CamUri;
         Queue<Mat> matQueue = new Queue<Mat>();
@@ -71,7 +71,7 @@ namespace RealtimeFireDetection
             initApp();
         }
 
-        private Bitmap saveFlameInfo(Mat image, List<Prediction> result, bool save)
+        private Bitmap saveFlameInfo(Mat image, List<Prediction> result, bool save = false)
         {
             string strNow = DateTime.Now.ToString("yyyyMMddHHmmss");
             StreamWriter writer;
@@ -149,6 +149,15 @@ namespace RealtimeFireDetection
             Graphics g = Graphics.FromImage(bmp);
             string[] tmps = sb.ToString().Trim().Split('/');
 
+            foreach (Flame flame in FlameList)
+            {
+                flame.IsItFire(() => {
+                    Console.WriteLine("Invoked flame.IsItFire");
+                    save = true;
+                });
+                if(save) break;
+            }
+
             if (save)
             {
                 writer = File.CreateText(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_result" + ".txt");
@@ -181,7 +190,7 @@ namespace RealtimeFireDetection
             if (result.Count > 0)
             {
                 detectorState = DetectorState.DETECT_FLAME;
-                Bitmap bmpResult = saveFlameInfo(image, result, true);
+                Bitmap bmpResult = saveFlameInfo(image, result);
                 System.Drawing.Size resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
                 Bitmap bmp = new Bitmap(bmpResult, resize);
                 pbResult.Image = bmp;
@@ -210,7 +219,7 @@ namespace RealtimeFireDetection
             var result = DoYoLo(image);
             if (result.Count > 0)
             {
-                Bitmap bmpResult = saveFlameInfo(image, result, false);
+                Bitmap bmpResult = saveFlameInfo(image, result);
                 countWatchFlame++;
                 System.Drawing.Size resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
                 Bitmap bmp = new Bitmap(bmpResult, resize);
@@ -218,7 +227,7 @@ namespace RealtimeFireDetection
                 if(countWatchFlame > 5)
                 {
                     detectorState = DetectorState.MONITORING_FIRE;
-                    saveFlameInfo(image, result, true);
+                    saveFlameInfo(image, result);
                     Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "Change state to MONITORING_FIRE"), true);
                     AddLogMessage(message);
                     countWatchFlame = 0;
@@ -240,14 +249,14 @@ namespace RealtimeFireDetection
             if (result.Count > 0)
             {
                 countWatchFlame++;
-                Bitmap bmpResult = saveFlameInfo(image, result, false);
+                Bitmap bmpResult = saveFlameInfo(image, result);
                 System.Drawing.Size resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
                 Bitmap bmp = new Bitmap(bmpResult, resize);
                 pbResult.Image = bmp;
                 if (countWatchFlame > 5)
                 {
                     detectorState = DetectorState.ALERT;
-                    saveFlameInfo(image, result, true);
+                    saveFlameInfo(image, result);
                     Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "Change state to ALERT"), true);
                     AddLogMessage(message);
                     countWatchFlame = 0;
@@ -379,7 +388,7 @@ namespace RealtimeFireDetection
                                 var result = DoYoLo(matImage);
                                 if (result.Count > 0)
                                 {
-                                    Bitmap bmpResult = saveFlameInfo(matImage, result, false);
+                                    Bitmap bmpResult = saveFlameInfo(matImage, result);
                                     resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
                                     bmp = new Bitmap(bmpResult, resize);
                                     pbResult.Image = bmp;
@@ -523,6 +532,7 @@ namespace RealtimeFireDetection
 
             public double StandardDeviation { get; set; }
 
+            override
             public string ToString()
             {
                 return string.Format("Location X:{0}  Y:{1}  W:{2}  H:{3}  Confidence:{4:0.00}  DiagonalLength:{5:0.00}  StandardDeviation:{6:0.00}", Area.X, Area.Y, Area.Width, Area.Height, Confidence, DiagonalLength, StandardDeviation);
@@ -534,12 +544,14 @@ namespace RealtimeFireDetection
 
         class Flame
         {
+            public DetectorState state = DetectorState.NO_FIRE;
             public string ID { get; set; }
             public List<FlameInfo> FlameInfoList = new List<FlameInfo>();
             
             public Flame(string id)
             {
                 this.ID = id;
+                state = DetectorState.NO_FIRE;
             }
 
             public bool AddFlameInfo(FlameInfo info)
@@ -558,7 +570,7 @@ namespace RealtimeFireDetection
                     info.DiagonalLength = GetDiagonalLength(info.Area.Width, info.Area.Height);
                     FlameInfoList.Add(info);
 
-                    if (FlameInfoList.Count >= 10) FlameInfoList.RemoveAt(0);
+                    if (FlameInfoList.Count >= 11) FlameInfoList.RemoveAt(0);
                     if (FlameInfoList.Count > 0)
                     {
                         info.StandardDeviation = GetStandardDeviation();
@@ -596,6 +608,39 @@ namespace RealtimeFireDetection
                 return Math.Sqrt(Math.Pow(w, 2) + Math.Pow(h, 2));
             }
 
+            public void IsItFire(Action action)
+            {
+                double sum = 0;
+                double avg = 0;
+                bool isAll = true;
+                for(int i=1;i<FlameInfoList.Count-1;i++)
+                {
+                    //sum += FlameInfoList.ElementAt(i).StandardDeviation;
+                    if (FlameInfoList.ElementAt(i).StandardDeviation <= STANDARD_DEVIATION_LOW_LIMIT)
+                    {
+                        isAll = false;
+                        break;
+                    }
+                }
+                //avg = sum / (FlameInfoList.Count - 1);
+
+                //if (avg > STANDARD_DEVIATION_LOW_LIMIT)//화재
+                if (isAll)//화재
+                {
+                    if (state == DetectorState.NO_FIRE) action();
+                    state = DetectorState.DETECT_FLAME;
+                }
+                else
+                {
+                    if (state != DetectorState.NO_FIRE)
+                    {
+                        //action();
+                    }
+                    state = DetectorState.NO_FIRE;
+                }
+            }
+
+            override
             public string ToString()
             {
                 LogMessage msg;
