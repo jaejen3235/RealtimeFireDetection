@@ -356,32 +356,28 @@ namespace RealtimeFireDetection
                 {
                     if (!video.Read(image))
                     {
-                        Console.WriteLine("Cv2.WaitKey()");
-                        Cv2.WaitKey(100);
-                        matImageFailCount++;
-                        if(matImageFailCount > 10)
+                        Console.WriteLine(DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + " Cv2.WaitKey()");
+                        Cv2.WaitKey(1000);
+                        video.Release();
+                        Thread.Sleep(1000);
+                        if (video.Open(CamUri))
                         {
                             matImageFailCount = 0;
-                            video.Dispose();
-                            video = null;
-                            Thread.Sleep(300);
-                            video = new VideoCapture();
-                            while (true)
+                        }
+                        else
+                        {
+                            matImageFailCount++;
+                            if (matImageFailCount > 10)
                             {
+                                matImageFailCount = 0;
+                                video.Dispose();
                                 Thread.Sleep(1000);
-                                matImageFailCount++;
-                                if(matImageFailCount > 5)
-                                {
-                                    if (video.Open(CamUri))
-                                    {
-                                        matImageFailCount = 0;
-                                        break;
-                                    }
-                                    break;
-                                }
+                                video = new VideoCapture();
+                                Thread.Sleep(1000);
+                                video.Open(CamUri);
+                                Thread.Sleep(1000);
                             }
                         }
-                        continue;
                     }
                     if (!image.Empty())
                     {
@@ -416,25 +412,28 @@ namespace RealtimeFireDetection
                             stopwatch.Stop();
 
                             Thread t = new Thread(() => {
-                                var result = DoYoLo(matImage);
-                                if (result.Count > 0)
+                                using(Mat yoloImage = matImage.Clone())
                                 {
-                                    Bitmap bmpResult = saveFlameInfo(matImage, result);
-                                    resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
-                                    bmp = new Bitmap(bmpResult, resize);
-                                    pbResult.Image = bmp;
-                                    detectorState = DetectorState.DETECT_FLAME;
-                                    pbResult.Update();
-                                    noFireWatch.Reset();
-                                    if(!noFireWatch.IsRunning) noFireWatch.Start();
-                                }
-                                else
-                                {
-                                    if (noFireWatch.ElapsedMilliseconds > 1000 * NO_FIRE_WAIT_TIME)
+                                    var result = DoYoLo(yoloImage);
+                                    if (result.Count > 0)
                                     {
-                                        noFireWatch.Stop();
+                                        Bitmap bmpResult = saveFlameInfo(yoloImage, result);
+                                        resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
+                                        bmp = new Bitmap(bmpResult, resize);
+                                        pbResult.Image = bmp;
+                                        detectorState = DetectorState.DETECT_FLAME;
+                                        pbResult.Update();
                                         noFireWatch.Reset();
-                                        resetState();
+                                        if (!noFireWatch.IsRunning) noFireWatch.Start();
+                                    }
+                                    else
+                                    {
+                                        if (noFireWatch.ElapsedMilliseconds > 1000 * NO_FIRE_WAIT_TIME)
+                                        {
+                                            noFireWatch.Stop();
+                                            noFireWatch.Reset();
+                                            resetState();
+                                        }
                                     }
                                 }
                             });
