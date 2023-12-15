@@ -718,7 +718,6 @@ namespace RealtimeFireDetection
             Cv2.Rectangle(frame, new Rect(10, 10, (int)(175 * scaleUpW), (int)(14 * scaleUpH)), s, -1, LineTypes.AntiAlias);
             //Cv2.Rectangle(frame, new OpenCvSharp.Point(185, 45), new OpenCvSharp.Point(235, 95), Scalar.Navy, -1, LineTypes.AntiAlias);
             Cv2.PutText(frame, dt, new OpenCvSharp.Point(10, 20), HersheyFonts.HersheySimplex, 0.4, Scalar.Blue, 0, LineTypes.AntiAlias);
-
         }
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
