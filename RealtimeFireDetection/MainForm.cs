@@ -80,6 +80,7 @@ namespace RealtimeFireDetection
             string[] ss;
             Rectangle rec;
             bool isNewFlameInfo;
+            int n = 1;
 
             switch (detectorState)
             {
@@ -92,8 +93,9 @@ namespace RealtimeFireDetection
             StringBuilder sb = new StringBuilder();
             foreach (var obj in result)
             {
-                Cv2.Rectangle(image, new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin), new OpenCvSharp.Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 2);
-                Cv2.PutText(image, obj.Label + " " + obj.Confidence.ToString("F2"), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
+                Cv2.Rectangle(image, new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin), new OpenCvSharp.Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 1);
+                //Cv2.PutText(image, obj.Label + " " + obj.Confidence.ToString("F2"), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
+                Cv2.PutText(image, string.Format("L{0:D2}:{1}", n++, obj.Confidence.ToString("F2")), new OpenCvSharp.Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 0.4, new Scalar(0, 0, 255), 1);
                 //writer.WriteLine(obj.Box.Xmin + ", " + obj.Box.Xmax + "," + obj.Box.Ymin + "," + obj.Box.Ymax + "," + obj.Confidence.ToString("F2"));
                 string tmp = Math.Floor(obj.Box.Xmin + (obj.Box.Xmax - obj.Box.Xmin) * 0.5) + "," + // 중심점 x 좌표
                     Math.Floor(obj.Box.Ymin + (obj.Box.Ymax - obj.Box.Ymin) * 0.5) + "," + // 중심점 y 좌표
@@ -157,23 +159,49 @@ namespace RealtimeFireDetection
                 });
                 if(save) break;
             }
-
+            
             if (save)
             {
                 writer = File.CreateText(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_result" + ".txt");
-                Font fnt = new Font("Arial", 12, FontStyle.Bold);
+                Font fnt = new Font("Arial", 8, FontStyle.Regular);
                 int cnt = 1;
+                int x = 0, y = 0, w = 0, h = 0;
                 foreach (string s in tmps)
                 {
                     if (s == null || s.Length == 0) break;
                     writer.WriteLine(s);
                     ss = s.Trim().Split(',');
-                    string sw = string.Format("Location {0:D2} X:{1}  Y:{2}  W:{3}  H:{4}  Confidence:{5:0.00}", cnt++, ss[0], ss[1], ss[2], ss[3], ss[4]);
-                    g.DrawString(sw, fnt, new SolidBrush(Color.Black), 12, cnt * 30 + 2);
-                    g.DrawString(sw, fnt, new SolidBrush(Color.Yellow), 10, cnt * 30);
+                    string sw = string.Format("L{0:D2} X:{1} Y:{2} W:{3} H:{4} C:{5:0.00}", cnt, ss[0], ss[1], ss[2], ss[3], ss[4]);
+                    g.DrawString(sw, fnt, new SolidBrush(Color.Black), 12, cnt * 10 + 15 + 2);
+                    g.DrawString(sw, fnt, new SolidBrush(Color.Yellow), 10, cnt * 10 + 15);
+
+                    int.TryParse(ss[0], out x);
+                    int.TryParse(ss[1], out y);
+                    int.TryParse(ss[2], out w);
+                    int.TryParse(ss[3], out h);
+                    x -= 10; y -= 10;
+                    w = 20; h = 20;
+
+                    if (x < 0) x = 0;
+                    if (y < 0) y = 0;
+                    if (x + w > bmp.Width) w = bmp.Width - (x + w);
+                    if (y + h > bmp.Height) h = bmp.Height - (y + h);
+
+
+
+                    if (w > 0 && h > 0)
+                    {
+                        //영역을 벗어나지 않도록 Crop
+                        Bitmap croppedBitmap = bmp.Clone(new Rectangle(x, y, w, h), System.Drawing.Imaging.PixelFormat.DontCare);
+                        makeRColor(ref croppedBitmap);
+                        int red = 0, green = 0, blue = 0;
+                        makeRGB_Average(croppedBitmap, ref red, ref green, ref blue);
+                        croppedBitmap.Save(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_" + string.Format("L{0:D2}_{1},{2},{3}", cnt, red, green, blue) +"_cropped.bmp", ImageFormat.Bmp);
+                    }
+                    cnt++;
                 }
                 writer.Close();
-                bmp.Save(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_snapshot.jpg", ImageFormat.Jpeg);
+                bmp.Save(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_snapshot.bmp", ImageFormat.Bmp);
             }
             return bmp;
         }
@@ -335,17 +363,20 @@ namespace RealtimeFireDetection
                         {
                             matImageFailCount = 0;
                             video.Dispose();
+                            video = null;
+                            Thread.Sleep(300);
                             video = new VideoCapture();
-                            Thread.Sleep(1000);
                             while (true)
                             {
                                 Thread.Sleep(1000);
                                 matImageFailCount++;
                                 if(matImageFailCount > 5)
                                 {
-                                    video.Open(CamUri);
-                                    Thread.Sleep(1000);
-                                    matImageFailCount = 0;
+                                    if (video.Open(CamUri))
+                                    {
+                                        matImageFailCount = 0;
+                                        break;
+                                    }
                                     break;
                                 }
                             }
@@ -615,6 +646,7 @@ namespace RealtimeFireDetection
                 bool isAll = true;
                 for(int i=1;i<FlameInfoList.Count-1;i++)
                 {
+                    //검색된 영역의 모든 대각선이 지정된 값 이상인지 확인
                     //sum += FlameInfoList.ElementAt(i).StandardDeviation;
                     if (FlameInfoList.ElementAt(i).StandardDeviation <= STANDARD_DEVIATION_LOW_LIMIT)
                     {
@@ -683,9 +715,9 @@ namespace RealtimeFireDetection
             //Cv2.Ellipse(frame, new RotatedRect(new Point2f(290, 70), new Size2f(75, 45), 0), Scalar.BlueViolet, 10, LineTypes.AntiAlias);
             //Cv2.Ellipse(frame, new OpenCvSharp.Point(10, 150), new OpenCvSharp.Size(50, 50), -90, 0, 100, Scalar.Tomato, -1, LineTypes.AntiAlias);
             Scalar s = new Scalar(255, 255, 255, 0.5);
-            Cv2.Rectangle(frame, new Rect(10, 10, 455, 40), s, -1, LineTypes.AntiAlias);
+            Cv2.Rectangle(frame, new Rect(10, 10, (int)(175 * scaleUpW), (int)(14 * scaleUpH)), s, -1, LineTypes.AntiAlias);
             //Cv2.Rectangle(frame, new OpenCvSharp.Point(185, 45), new OpenCvSharp.Point(235, 95), Scalar.Navy, -1, LineTypes.AntiAlias);
-            Cv2.PutText(frame, dt, new OpenCvSharp.Point(20, 40), HersheyFonts.HersheyComplex, 1, Scalar.Blue, 2, LineTypes.AntiAlias);
+            Cv2.PutText(frame, dt, new OpenCvSharp.Point(10, 20), HersheyFonts.HersheySimplex, 0.4, Scalar.Blue, 0, LineTypes.AntiAlias);
 
         }
 
@@ -882,6 +914,180 @@ namespace RealtimeFireDetection
         private void cbVitualFlame_CheckedChanged(object sender, EventArgs e)
         {
             //cbVitualFlame.Checked;
+        }
+
+        /////////////////////////////////////////////////////////////////////////////////////////////////
+        private void makeBinary(Bitmap tmp)
+        {
+            int width = tmp.Width;
+            int height = tmp.Height;
+            Color colorData;
+
+            //총 사이즈만큼 반복을 하면서 하나하나의 픽셀을 변경한다.
+            for (int i = 0; i < width; i++)
+            {
+                for (int j = 0; j < height; j++)
+                {
+                    colorData = tmp.GetPixel(i, j);
+                    BinaryConvert(ref colorData);
+                    tmp.SetPixel(i, j, colorData);
+                }
+            }
+        }
+        private void BinaryConvert(ref Color src)
+        {
+            //382란 수치는 (255*3)/2 이다. 평균보다 어두우면 검정으로 바꿈.
+            if ((src.R + src.G + src.B) < 382)
+            {
+                src = Color.FromArgb(0, 0, 0);
+            }
+            else
+            {
+                src = Color.FromArgb(255, 255, 255);
+            }
+        }
+
+        private void makeRGB_Average(Bitmap tmp, ref int Red, ref int Green, ref int Blue)
+        {
+            int width = tmp.Width;
+            int height = tmp.Height;
+            Color colorData;
+            double r = 0, g = 0, b = 0;
+            double pCnt = 0;
+            for (int i = 0; i < width; i++)
+            {
+                for (int j = 0; j < height; j++)
+                {
+                    colorData = tmp.GetPixel(i, j);
+                    if (colorData.R <= 0x22 && colorData.G <= 0x22 && colorData.B <= 0x22) continue; //검정색 계열 제외
+                    if (colorData.R >= 0xDB && colorData.G >= 0xDB && colorData.B >= 0xDB) continue; //흰색 계열 제외
+                    r += colorData.R;
+                    g += colorData.G;
+                    b += colorData.B;
+                    pCnt++;
+                }
+            }
+            Red = (int)(r / pCnt);
+            Green = (int)(g / pCnt);
+            Blue = (int)(b / pCnt);
+        }
+
+        private void makeRColor(ref Bitmap tmp)
+        {
+            int width = tmp.Width;
+            int height = tmp.Height;
+            Color colorData;
+            
+            for (int i = 0; i < width; i++)
+            {
+                for (int j = 0; j < height; j++)
+                {
+                    colorData = tmp.GetPixel(i, j);
+                    RColorConvert(ref colorData);
+                    tmp.SetPixel(i, j, colorData);
+                }
+            }
+        }
+        private void RColorConvert(ref Color src)
+        {
+            if ((src.R < src.G) || (src.R < src.B)) //레드 성분이 상대적으로 적다면 회색화
+            {
+                int res = (src.R + src.G + src.B) / 3;
+                src = Color.FromArgb(res, res, res);
+            }
+        }
+        private void makeGColor(Bitmap tmp)
+        {
+            int width = tmp.Width;
+            int height = tmp.Height;
+            Color colorData;
+            
+            for (int i = 0; i < width; i++)
+            {
+                for (int j = 0; j < height; j++)
+                {
+                    colorData = tmp.GetPixel(i, j);
+                    GColorConvert(ref colorData);
+                    tmp.SetPixel(i, j, colorData);
+                }
+            }
+        }
+        private void GColorConvert(ref Color src)
+        {
+            if ((src.G < src.R) || (src.G < src.B)) //그린 성분이 상대적으로 적다면 회색화
+            {
+                int res = (src.R + src.G + src.B) / 3;
+                src = Color.FromArgb(res, res, res);
+            }
+        }
+        private void makeBColor(Bitmap tmp)
+        {
+            int width = tmp.Width;
+            int height = tmp.Height;
+            Color colorData;
+
+            for (int i = 0; i < width; i++)
+            {
+                for (int j = 0; j < height; j++)
+                {
+                    colorData = tmp.GetPixel(i, j);
+                    BColorConvert(ref colorData);
+                    tmp.SetPixel(i, j, colorData);
+                }
+            }
+        }
+        private void BColorConvert(ref Color src)
+        {
+            if ((src.B < src.R) || (src.B < src.G)) //블루 성분이 상대적으로 적다면 회색화
+            {
+                int res = (src.R + src.G + src.B) / 3;
+                src = Color.FromArgb(res, res, res);
+            }
+        }
+        private void makeGray(Bitmap tmp)
+        {
+            int width = tmp.Width;
+            int height = tmp.Height;
+            Color colorData;
+
+            for (int i = 0; i < width; i++)
+            {
+                for (int j = 0; j < height; j++)
+                {
+                    colorData = tmp.GetPixel(i, j);
+                    GaryConvert(ref colorData);
+                    tmp.SetPixel(i, j, colorData);
+                }
+            }
+        }
+        private void GaryConvert(ref Color src)
+        {
+            int res = (src.R + src.G + src.B) / 3;
+            src = Color.FromArgb(res, res, res); //3개의 값의 평균으로 색상을 조정한다.
+            //RGB간 색상의 격차가 없으면 없을 수록 색감은 무채색을 띈다.
+        }
+        private void makeInvert(Bitmap tmp)
+        {
+            int width = tmp.Width;
+            int height = tmp.Height;
+            Color colorData;
+            for (int i = 0; i < width; i++)
+            {
+                for (int j = 0; j < height; j++)
+                {
+                    colorData = tmp.GetPixel(i, j);
+                    Invert(ref colorData);
+                    tmp.SetPixel(i, j, colorData);
+                }
+            }
+        }
+        private void Invert(ref Color src)
+        {
+            //0xFF(255) 으로 XOR 연산하여 값을 반전 시킨다.
+            int r = src.R ^ 255;
+            int g = src.G ^ 255;
+            int b = src.B ^ 255;
+            src = Color.FromArgb(r, g, b);
         }
     }
 }
