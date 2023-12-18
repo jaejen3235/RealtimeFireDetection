@@ -206,112 +206,6 @@ namespace RealtimeFireDetection
             return bmp;
         }
 
-        private void checkFlame(Mat image)
-        {
-            //float ratio = 0.0f;
-            //OpenCvSharp.Point diff1 = new OpenCvSharp.Point();
-            //OpenCvSharp.Point diff2 = new OpenCvSharp.Point();
-            ////var letter_image = YoloDetector.CreateLetterbox(image, new OpenCvSharp.Size(640, 384), new Scalar(114, 114, 114), out ratio, out diff1, out diff2);
-            //var result = detector.objectDetection(image);
-            var result = DoYoLo(image);
-            string msg = "";
-            if (result.Count > 0)
-            {
-                detectorState = DetectorState.DETECT_FLAME;
-                Bitmap bmpResult = saveFlameInfo(image, result);
-                System.Drawing.Size resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
-                Bitmap bmp = new Bitmap(bmpResult, resize);
-                pbResult.Image = bmp;
-
-                countWatchFlame = 0;
-                msg = string.Format("Detect:{0}", result.Count);
-                Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] Detected fire: {0} ", result.Count), true);
-                AddLogMessage(message);
-            }
-            else
-            {
-                //Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "No fire."), true);
-                //AddLogMessage(message);
-                msg = string.Format("{0}", "No fire");
-            }
-            //Cv2.WaitKey();
-        }
-
-        private void watchFlame(Mat image)
-        {
-            //float ratio = 0.0f;
-            //OpenCvSharp.Point diff1 = new OpenCvSharp.Point();
-            //OpenCvSharp.Point diff2 = new OpenCvSharp.Point();
-            ////var letter_image = YoloDetector.CreateLetterbox(image, new OpenCvSharp.Size(640, 384), new Scalar(114, 114, 114), out ratio, out diff1, out diff2);
-            //var result = detector.objectDetection(image);
-            var result = DoYoLo(image);
-            if (result.Count > 0)
-            {
-                Bitmap bmpResult = saveFlameInfo(image, result);
-                countWatchFlame++;
-                System.Drawing.Size resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
-                Bitmap bmp = new Bitmap(bmpResult, resize);
-                pbResult.Image = bmp;
-                if(countWatchFlame > 5)
-                {
-                    detectorState = DetectorState.MONITORING_FIRE;
-                    saveFlameInfo(image, result);
-                    Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "Change state to MONITORING_FIRE"), true);
-                    AddLogMessage(message);
-                    countWatchFlame = 0;
-                }
-            }
-            else
-            {
-                countWatchFlame--;
-                if(countWatchFlame <= -5)
-                {
-                    resetState();
-                }
-            }
-        }
-
-        private void monitorFlame(Mat image)
-        {
-            var result = DoYoLo(image);
-            if (result.Count > 0)
-            {
-                countWatchFlame++;
-                Bitmap bmpResult = saveFlameInfo(image, result);
-                System.Drawing.Size resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
-                Bitmap bmp = new Bitmap(bmpResult, resize);
-                pbResult.Image = bmp;
-                if (countWatchFlame > 5)
-                {
-                    detectorState = DetectorState.ALERT;
-                    saveFlameInfo(image, result);
-                    Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "Change state to ALERT"), true);
-                    AddLogMessage(message);
-                    countWatchFlame = 0;
-                }
-            }
-            else
-            {
-                countWatchFlame--;
-                if (countWatchFlame <= -5)
-                {
-                    resetState();
-                }
-            }
-        }
-        private void alertFlame(Mat image)
-        {
-            var result = DoYoLo(image);
-            if (result.Count <= 0)
-            {
-                countWatchFlame--;
-                if (countWatchFlame <= -5)
-                {
-                    resetState();
-                }
-            }
-        }
-
         private void resetState()
         {
             pbResult.Image = null;
@@ -332,7 +226,6 @@ namespace RealtimeFireDetection
             return detector.objectDetection(image);
         }
 
-
         private void RunFlameMonitor()
         {
             detector = new YoloDetector("best_yolov5.onnx");
@@ -349,6 +242,7 @@ namespace RealtimeFireDetection
             Stopwatch noFireWatch = new Stopwatch();
             noFireWatch.Stop();
             int matImageFailCount = 0;
+            System.Drawing.Size resize = new System.Drawing.Size(pbScreen.Width, pbScreen.Height);
 
             using (Mat image = new Mat())
             {
@@ -403,8 +297,7 @@ namespace RealtimeFireDetection
                         }
 
                         Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
-                        System.Drawing.Size resize = new System.Drawing.Size(pbScreen.Width, pbScreen.Height);
-                        bmp = new Bitmap(bmp, resize);
+                        //bmp = new Bitmap(bmp, resize);
                         pbScreen.Image = bmp;
                         
                         if (stopwatch.ElapsedMilliseconds > 1000 * fireCheckDuration)
@@ -418,8 +311,7 @@ namespace RealtimeFireDetection
                                     if (result.Count > 0)
                                     {
                                         Bitmap bmpResult = saveFlameInfo(yoloImage, result);
-                                        resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
-                                        bmp = new Bitmap(bmpResult, resize);
+                                        //bmp = new Bitmap(bmpResult, resize);
                                         pbResult.Image = bmp;
                                         detectorState = DetectorState.DETECT_FLAME;
                                         pbResult.Update();
@@ -450,110 +342,6 @@ namespace RealtimeFireDetection
             video = null;
         }
 
-        private void playCam()
-        {
-            detector = new YoloDetector("best_yolov5.onnx");
-            VideoCapture video = new VideoCapture();
-            //video.Open("rtsp://admin:Dainlab2306@169.254.9.51:554/H.264/media.smp");
-            video.Open(CamUri);
-            //VideoWriter vWriter = null;
-            //bool isFirstFrame = true;
-            Stopwatch stopwatch = new Stopwatch();
-            stopwatch.Start();
-            Mat matImage = null;
-            bool isFirst = true;
-            int flameNo = 0;
-
-            using (Mat image = new Mat())
-            {
-                while (doPlay)
-                {
-                    if (!video.Read(image))
-                    {
-                        Cv2.WaitKey();
-                    }
-                    if (!image.Empty())
-                    {
-                        if (isFirst)
-                        {
-                            scaleDnW = (double)pbScreen.Width / (double)image.Width;
-                            scaleDnH = (double)pbScreen.Height / (double)image.Height;
-                            scaleUpW = (double)image.Width / (double)pbScreen.Width;
-                            scaleUpH = (double)image.Height / (double)pbScreen.Height;
-                            isFirst = false;
-                        }
-
-                        string dt = DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff");
-                        //string fdt = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                        drawDateTimeOnTheMat(image, dt);
-                        lock (flameListLock)
-                        {
-                            if(virtualFlameList.Count() > 0)
-                            {
-                                matImage = drawFlames(image);
-                            }
-                            else matImage = image;
-                        }
-
-                        Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
-                        System.Drawing.Size resize = new System.Drawing.Size(pbScreen.Width, pbScreen.Height);
-                        bmp = new Bitmap(bmp, resize);
-                        pbScreen.Image = bmp;
-
-                        if (stopwatch.ElapsedMilliseconds > 1000 * fireCheckDuration)
-                        {
-                            stopwatch.Stop();
-                            //Logger.Logger.WriteLog(out message, LogType.Info, "[YOLO] Start image analysis", true);
-                            //AddLogMessage(message);
-
-                            Thread t;
-
-                            switch (detectorState)
-                            {
-                                case DetectorState.NO_FIRE:
-                                    t = new Thread(() => {
-                                        checkFlame(matImage.Clone());
-                                    });
-                                    t.Start();
-                                    break;
-
-                                case DetectorState.DETECT_FLAME:
-                                    t = new Thread(() => {
-                                        watchFlame(matImage.Clone());
-                                    });
-                                    t.Start();
-                                    break;
-                                
-                                case DetectorState.MONITORING_FIRE:
-                                    t = new Thread(() => {
-                                        monitorFlame(matImage.Clone());
-                                    });
-                                    t.Start();
-                                    break;
-                                
-                                case DetectorState.ALERT:
-                                    t = new Thread(() => {
-                                        alertFlame(matImage.Clone());
-                                    });
-                                    t.Start();
-                                    break;
-                            }
-                            
-                            
-                            
-                            stopwatch.Reset();
-                            stopwatch.Start();
-                        }
-                    }
-                    //if (Cv2.WaitKey(1) >= 0) break;
-                }
-                //if (vWriter != null) vWriter.Release();
-            }
-            video = null;
-        }
-
-
-
         class FlameInfo
         {
             public Rectangle Area { get; set; }
@@ -568,7 +356,6 @@ namespace RealtimeFireDetection
                 return string.Format("Location X:{0}  Y:{1}  W:{2}  H:{3}  Confidence:{4:0.00}  DiagonalLength:{5:0.00}  StandardDeviation:{6:0.00}", Area.X, Area.Y, Area.Width, Area.Height, Confidence, DiagonalLength, StandardDeviation);
             }
         }
-
 
         List<Flame> FlameList = new List<Flame>();
 
@@ -685,6 +472,98 @@ namespace RealtimeFireDetection
             }
         }
 
+        class Polygon
+        {
+            private List<PointF> mPointList = new List<PointF>();
+
+            public Polygon()
+            {
+                mPointList.Add(new PointF(200, 100));
+                mPointList.Add(new PointF(200, 200));
+                mPointList.Add(new PointF(100, 200));
+                mPointList.Add(new PointF(100, 100));
+                mPointList.Add(new PointF(200, 100));
+            }
+
+            public void addPoint(float x, float y)
+            {
+                mPointList.Add(new PointF(x, y));
+            }
+
+            public bool isPointInPolygon(float x, float y)
+            {
+                int size = mPointList.Count;
+
+                // 점이 3개 이하로 이루어진 polygon은 없다.
+                if (size < 3)
+                {
+                    return false;
+                }
+
+                bool isInnerPoint = false;
+
+                // Point in polygon algorithm
+                for (int cur = 0; cur < size - 1; cur++)
+                {
+                    PointF curPoint = mPointList.ElementAt(cur);
+                    PointF prevPoint = mPointList.ElementAt(cur + 1);
+                    /*
+                     * y - y1 = M * (x - x1)
+                     * M = (y2 - y1) / (x2 - x1)
+                     */
+                    if (curPoint.Y < y && prevPoint.Y >= y || prevPoint.Y < y && curPoint.Y >= y)
+                    {
+                        if (curPoint.X + (y - curPoint.Y) / (prevPoint.Y - curPoint.Y) * (prevPoint.X - curPoint.X) < x)
+                        {
+                            isInnerPoint = !isInnerPoint;
+                        }
+                    }
+                }
+                return isInnerPoint;
+            }
+
+            private void pictureBox1_MouseDown(object sender, MouseEventArgs e)
+            {
+                //   0 To  mouse.X ;
+                PointF orgin = new PointF(0, 0);
+                int cnt = 0;
+                PointF mDown = new PointF(Convert.ToSingle(e.X), Convert.ToSingle(e.Y));
+                for (int i = 0; i < mPointList.Count - 1; i++)
+                    GetIntersectPoint(orgin, mDown, mPointList.ElementAt(i), mPointList.ElementAt(i+1), ref cnt);
+                if (cnt % 2 == 1) Console.WriteLine("내부");
+                else Console.WriteLine("외부");
+            }
+
+            bool GetIntersectPoint(PointF AP1, PointF AP2, PointF BP1, PointF BP2, ref int Cnt)
+            {
+                float t;
+                float s;
+                float under = (BP2.Y - BP1.Y) * (AP2.X - AP1.X) - (BP2.X - BP1.X) * (AP2.Y - AP1.Y);
+                if (under == 0)
+                {
+                    //   Cnt = Cnt;
+                    return false;
+                }
+                float _t = (BP2.X - BP1.X) * (AP1.Y - BP1.Y) - (BP2.Y - BP1.Y) * (AP1.X - BP1.X);
+                float _s = (AP2.X - AP1.X) * (AP1.Y - BP1.Y) - (AP2.Y - AP1.Y) * (AP1.X - BP1.X);
+
+                t = _t / under;
+                s = _s / under;
+                if (t < 0.0 || t > 1.0 || s < 0.0 || s > 1.0)
+                {
+                    //    Cnt = Cnt;
+                    return false;
+                }
+                if (_t == 0 && _s == 0)
+                {
+                    //   Cnt = Cnt;
+                    return false;
+                }
+                Cnt++;
+
+                return true;
+            }
+        }
 
         private Mat drawFlames(Mat image)
         {
@@ -818,6 +697,7 @@ namespace RealtimeFireDetection
         private void MainForm_Load(object sender, EventArgs e)
         {
             pbResult.Update();
+            pbCanvas.Parent = pbResult;
         }
 
         private void makeFolders(string path)
@@ -900,13 +780,6 @@ namespace RealtimeFireDetection
                     e.Graphics.DrawString(text, fnt, new SolidBrush(Color.DarkRed), (pbScreen.Width - stringSize.Width) / 2, (pbScreen.Height - stringSize.Height) / 2);
                     break;
             }
-        }
-
-        private void button3_Click(object sender, EventArgs e)
-        {
-            Logger.Logger.WriteLog(out message, LogType.Info, string.Format("{0}", "Acknowledge fire"), true);
-            AddLogMessage(message);
-            resetState();
         }
 
         private void cbVitualFlame_CheckedChanged(object sender, EventArgs e)
@@ -1086,6 +959,11 @@ namespace RealtimeFireDetection
             int g = src.G ^ 255;
             int b = src.B ^ 255;
             src = Color.FromArgb(r, g, b);
+        }
+
+        private void pbCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            tbText.Text = string.Format("X:{0:D3}, Y:{1:D3}", e.X, e.Y);
         }
     }
 }
