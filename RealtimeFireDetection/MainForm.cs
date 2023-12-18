@@ -697,7 +697,6 @@ namespace RealtimeFireDetection
         private void MainForm_Load(object sender, EventArgs e)
         {
             pbResult.Update();
-            pbCanvas.Parent = pbResult;
         }
 
         private void makeFolders(string path)
@@ -959,11 +958,6 @@ namespace RealtimeFireDetection
             int g = src.G ^ 255;
             int b = src.B ^ 255;
             src = Color.FromArgb(r, g, b);
-        }
-
-        private void pbCanvas_MouseMove(object sender, MouseEventArgs e)
-        {
-            tbText.Text = string.Format("X:{0:D3}, Y:{1:D3}", e.X, e.Y);
         }
     }
 }

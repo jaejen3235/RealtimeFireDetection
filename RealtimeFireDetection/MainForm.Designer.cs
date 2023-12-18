@@ -31,6 +31,7 @@ namespace RealtimeFireDetection
         {
             this.groupBox1 = new System.Windows.Forms.GroupBox();
             this.groupBox6 = new System.Windows.Forms.GroupBox();
+            this.tbText = new System.Windows.Forms.TextBox();
             this.groupBox5 = new System.Windows.Forms.GroupBox();
             this.cbVitualFlame = new System.Windows.Forms.CheckBox();
             this.button1 = new System.Windows.Forms.Button();
@@ -40,8 +41,6 @@ namespace RealtimeFireDetection
             this.pbScreen = new System.Windows.Forms.PictureBox();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
             this.lbLog = new System.Windows.Forms.ListBox();
-            this.pbCanvas = new System.Windows.Forms.PictureBox();
-            this.tbText = new System.Windows.Forms.TextBox();
             this.groupBox1.SuspendLayout();
             this.groupBox6.SuspendLayout();
             this.groupBox5.SuspendLayout();
@@ -50,7 +49,6 @@ namespace RealtimeFireDetection
             this.groupBox3.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pbScreen)).BeginInit();
             this.groupBox2.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.pbCanvas)).BeginInit();
             this.SuspendLayout();
             // 
             // groupBox1
@@ -74,6 +72,14 @@ namespace RealtimeFireDetection
             this.groupBox6.Size = new System.Drawing.Size(663, 57);
             this.groupBox6.TabIndex = 11;
             this.groupBox6.TabStop = false;
+            // 
+            // tbText
+            // 
+            this.tbText.Enabled = false;
+            this.tbText.Location = new System.Drawing.Point(12, 22);
+            this.tbText.Name = "tbText";
+            this.tbText.Size = new System.Drawing.Size(640, 21);
+            this.tbText.TabIndex = 0;
             // 
             // groupBox5
             // 
@@ -108,7 +114,6 @@ namespace RealtimeFireDetection
             // 
             // groupBox4
             // 
-            this.groupBox4.Controls.Add(this.pbCanvas);
             this.groupBox4.Controls.Add(this.pbResult);
             this.groupBox4.Location = new System.Drawing.Point(672, 20);
             this.groupBox4.Name = "groupBox4";
@@ -170,25 +175,6 @@ namespace RealtimeFireDetection
             this.lbLog.Size = new System.Drawing.Size(1328, 292);
             this.lbLog.TabIndex = 0;
             // 
-            // pbCanvas
-            // 
-            this.pbCanvas.BackColor = System.Drawing.Color.Transparent;
-            this.pbCanvas.Location = new System.Drawing.Point(12, 20);
-            this.pbCanvas.Name = "pbCanvas";
-            this.pbCanvas.Size = new System.Drawing.Size(640, 360);
-            this.pbCanvas.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
-            this.pbCanvas.TabIndex = 7;
-            this.pbCanvas.TabStop = false;
-            this.pbCanvas.MouseMove += new System.Windows.Forms.MouseEventHandler(this.pbCanvas_MouseMove);
-            // 
-            // tbText
-            // 
-            this.tbText.Enabled = false;
-            this.tbText.Location = new System.Drawing.Point(12, 22);
-            this.tbText.Name = "tbText";
-            this.tbText.Size = new System.Drawing.Size(640, 21);
-            this.tbText.TabIndex = 0;
-            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 12F);
@@ -213,7 +199,6 @@ namespace RealtimeFireDetection
             this.groupBox3.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.pbScreen)).EndInit();
             this.groupBox2.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.pbCanvas)).EndInit();
             this.ResumeLayout(false);
 
         }
@@ -231,7 +216,6 @@ namespace RealtimeFireDetection
         private System.Windows.Forms.GroupBox groupBox6;
         private System.Windows.Forms.Button button1;
         private System.Windows.Forms.CheckBox cbVitualFlame;
-        private System.Windows.Forms.PictureBox pbCanvas;
         private System.Windows.Forms.TextBox tbText;
     }
 }
