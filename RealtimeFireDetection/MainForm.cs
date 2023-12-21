@@ -14,6 +14,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Point = OpenCvSharp.Point;
 
 namespace RealtimeFireDetection
 {
@@ -54,7 +55,11 @@ namespace RealtimeFireDetection
         double scaleUpW;
         double scaleUpH;
 
-
+        List<Point> Roi0 = new List<Point>();
+        List<List<Point>> RoiList = new List<List<Point>>();
+        List<Point> NonRoi0 = new List<Point>();
+        List<List<Point>> NonRoiList = new List<List<Point>>();
+        Polygon polygon = new Polygon();
 
         enum DetectorState
         {
@@ -115,6 +120,7 @@ namespace RealtimeFireDetection
                 FlameInfo info = new FlameInfo();
                 info.Area = rec;
                 info.Confidence = double.Parse(obj.Confidence.ToString("F2"));
+
                 ///////////////////////////////////////////////////////////////////////////
                 ///화염 판단
                 if (FlameList.Count == 0)
@@ -226,6 +232,23 @@ namespace RealtimeFireDetection
             return detector.objectDetection(image);
         }
 
+        private bool checkIsInOrNot(List<Prediction> predictionList)
+        {
+            foreach (List<Point> list in RoiList)
+            {
+                foreach(Prediction prediction in predictionList)
+                {
+                    if (polygon.isInside(list,
+                        prediction.Box.Xmin + (prediction.Box.Xmax - prediction.Box.Xmin) / 2,
+                        prediction.Box.Ymin + (prediction.Box.Ymax - prediction.Box.Ymin) / 2
+                        )){
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         private void RunFlameMonitor()
         {
             detector = new YoloDetector("best_yolov5.onnx");
@@ -284,9 +307,6 @@ namespace RealtimeFireDetection
                             isFirst = false;
                         }
 
-                        string dt = DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff");
-                        //string fdt = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                        drawDateTimeOnTheMat(image, dt);
                         lock (flameListLock)
                         {
                             if (virtualFlameList.Count() > 0)
@@ -296,8 +316,16 @@ namespace RealtimeFireDetection
                             else matImage = image;
                         }
 
+                        ///////////////////////////////////////////////////////////////////////////
+                        ///관심영역
+                        Cv2.Polylines(matImage, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
+                        string dt = DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff");
+                        //string fdt = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                        drawDateTimeOnTheMat(image, dt);
+
+
                         Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
-                        //bmp = new Bitmap(bmp, resize);
+                        bmp = new Bitmap(bmp, resize);
                         pbScreen.Image = bmp;
                         
                         if (stopwatch.ElapsedMilliseconds > 1000 * fireCheckDuration)
@@ -308,10 +336,10 @@ namespace RealtimeFireDetection
                                 using(Mat yoloImage = matImage.Clone())
                                 {
                                     var result = DoYoLo(yoloImage);
-                                    if (result.Count > 0)
+                                    if (result.Count > 0 && checkIsInOrNot(result))
                                     {
                                         Bitmap bmpResult = saveFlameInfo(yoloImage, result);
-                                        //bmp = new Bitmap(bmpResult, resize);
+                                        bmp = new Bitmap(bmpResult, resize);
                                         pbResult.Image = bmp;
                                         detectorState = DetectorState.DETECT_FLAME;
                                         pbResult.Update();
@@ -490,78 +518,26 @@ namespace RealtimeFireDetection
                 mPointList.Add(new PointF(x, y));
             }
 
-            public bool isPointInPolygon(float x, float y)
-            {
-                int size = mPointList.Count;
-
+            public bool isInside(List<Point> pList, float x, float y){
+                //crosses는 점q와 오른쪽 반직선과 다각형과의 교점의 개수
+                int crosses = 0;
+                int size = pList.Count;
                 // 점이 3개 이하로 이루어진 polygon은 없다.
                 if (size < 3)
                 {
                     return false;
                 }
-
-                bool isInnerPoint = false;
-
-                // Point in polygon algorithm
-                for (int cur = 0; cur < size - 1; cur++)
+                Point[] p = pList.ToArray();
+                for(int i = 0; i < p.Length; i++)
                 {
-                    PointF curPoint = mPointList.ElementAt(cur);
-                    PointF prevPoint = mPointList.ElementAt(cur + 1);
-                    /*
-                     * y - y1 = M * (x - x1)
-                     * M = (y2 - y1) / (x2 - x1)
-                     */
-                    if (curPoint.Y < y && prevPoint.Y >= y || prevPoint.Y < y && curPoint.Y >= y)
+                    int j = (i + 1) % p.Length;
+                    if((p[i].Y > y) != (p[j].Y > y))
                     {
-                        if (curPoint.X + (y - curPoint.Y) / (prevPoint.Y - curPoint.Y) * (prevPoint.X - curPoint.X) < x)
-                        {
-                            isInnerPoint = !isInnerPoint;
-                        }
+                        double atx = (p[j].X - p[i].X) * (y - p[i].Y) / (p[j].Y - p[i].Y) + p[i].X;
+                        if (x < atx) crosses++;
                     }
                 }
-                return isInnerPoint;
-            }
-
-            private void pictureBox1_MouseDown(object sender, MouseEventArgs e)
-            {
-                //   0 To  mouse.X ;
-                PointF orgin = new PointF(0, 0);
-                int cnt = 0;
-                PointF mDown = new PointF(Convert.ToSingle(e.X), Convert.ToSingle(e.Y));
-                for (int i = 0; i < mPointList.Count - 1; i++)
-                    GetIntersectPoint(orgin, mDown, mPointList.ElementAt(i), mPointList.ElementAt(i+1), ref cnt);
-                if (cnt % 2 == 1) Console.WriteLine("내부");
-                else Console.WriteLine("외부");
-            }
-
-            bool GetIntersectPoint(PointF AP1, PointF AP2, PointF BP1, PointF BP2, ref int Cnt)
-            {
-                float t;
-                float s;
-                float under = (BP2.Y - BP1.Y) * (AP2.X - AP1.X) - (BP2.X - BP1.X) * (AP2.Y - AP1.Y);
-                if (under == 0)
-                {
-                    //   Cnt = Cnt;
-                    return false;
-                }
-                float _t = (BP2.X - BP1.X) * (AP1.Y - BP1.Y) - (BP2.Y - BP1.Y) * (AP1.X - BP1.X);
-                float _s = (AP2.X - AP1.X) * (AP1.Y - BP1.Y) - (AP2.Y - AP1.Y) * (AP1.X - BP1.X);
-
-                t = _t / under;
-                s = _s / under;
-                if (t < 0.0 || t > 1.0 || s < 0.0 || s > 1.0)
-                {
-                    //    Cnt = Cnt;
-                    return false;
-                }
-                if (_t == 0 && _s == 0)
-                {
-                    //   Cnt = Cnt;
-                    return false;
-                }
-                Cnt++;
-
-                return true;
+                return crosses % 2 > 0;
             }
         }
 
@@ -592,10 +568,16 @@ namespace RealtimeFireDetection
             //Cv2.Circle(frame, new OpenCvSharp.Point(90, 70), 25, Scalar.Green, -1, LineTypes.AntiAlias);
             //Cv2.Ellipse(frame, new RotatedRect(new Point2f(290, 70), new Size2f(75, 45), 0), Scalar.BlueViolet, 10, LineTypes.AntiAlias);
             //Cv2.Ellipse(frame, new OpenCvSharp.Point(10, 150), new OpenCvSharp.Size(50, 50), -90, 0, 100, Scalar.Tomato, -1, LineTypes.AntiAlias);
-            Scalar s = new Scalar(255, 255, 255, 0.5);
-            Cv2.Rectangle(frame, new Rect(10, 10, (int)(175 * scaleUpW), (int)(14 * scaleUpH)), s, -1, LineTypes.AntiAlias);
             //Cv2.Rectangle(frame, new OpenCvSharp.Point(185, 45), new OpenCvSharp.Point(235, 95), Scalar.Navy, -1, LineTypes.AntiAlias);
-            Cv2.PutText(frame, dt, new OpenCvSharp.Point(10, 20), HersheyFonts.HersheySimplex, 0.4, Scalar.Blue, 0, LineTypes.AntiAlias);
+
+            //Scalar s = new Scalar(255, 255, 255, 0.5);
+            //Cv2.Rectangle(frame, new Rect(10, 10, (int)(175 * scaleUpW), (int)(14 * scaleUpH)), s, -1, LineTypes.AntiAlias);
+            string[] tmps = dt.Split(' ');
+            Cv2.PutText(frame, tmps[0], new OpenCvSharp.Point(12, 22), HersheyFonts.HersheySimplex, 0.4, Scalar.Black, 0, LineTypes.AntiAlias);
+            Cv2.PutText(frame, tmps[0], new OpenCvSharp.Point(10, 20), HersheyFonts.HersheySimplex, 0.4, Scalar.White, 0, LineTypes.AntiAlias);
+
+            Cv2.PutText(frame, tmps[1], new OpenCvSharp.Point(12, 42), HersheyFonts.HersheySimplex, 0.4, Scalar.Black, 0, LineTypes.AntiAlias);
+            Cv2.PutText(frame, tmps[1], new OpenCvSharp.Point(10, 40), HersheyFonts.HersheySimplex, 0.4, Scalar.White, 0, LineTypes.AntiAlias);
         }
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
@@ -684,6 +666,23 @@ namespace RealtimeFireDetection
             flameIcons[6] = Bitmap.FromFile("./f07.png");
             flameIcons[7] = Bitmap.FromFile("./f08.png");
 
+            Roi0.Add(new OpenCvSharp.Point(63, 339));
+            Roi0.Add(new OpenCvSharp.Point(61, 300));
+            Roi0.Add(new OpenCvSharp.Point(106, 270));
+            Roi0.Add(new OpenCvSharp.Point(106, 234));
+            Roi0.Add(new OpenCvSharp.Point(72, 142));
+            Roi0.Add(new OpenCvSharp.Point(106, 115));
+            Roi0.Add(new OpenCvSharp.Point(100, 66));
+            Roi0.Add(new OpenCvSharp.Point(122, 46));
+            Roi0.Add(new OpenCvSharp.Point(122, 28));
+            Roi0.Add(new OpenCvSharp.Point(102, 18));
+            Roi0.Add(new OpenCvSharp.Point(102, 0));
+            Roi0.Add(new OpenCvSharp.Point(639, 0));
+            Roi0.Add(new OpenCvSharp.Point(639, 158));
+            Roi0.Add(new OpenCvSharp.Point(496, 231));
+            Roi0.Add(new OpenCvSharp.Point(330, 288));
+            RoiList.Add(Roi0);
+
             doPlay = true;
             //bMin = DateTime.Now.Minute;
             //CamThread = new Thread(playCam)
@@ -719,6 +718,16 @@ namespace RealtimeFireDetection
 
         private void pbScreen_MouseClick(object sender, MouseEventArgs e)
         {
+            //관심영역 In, out 체크
+            int cnt = 0;
+            foreach (List<Point> list in RoiList)
+            {
+                if (polygon.isInside(list, e.X, e.Y))
+                {
+                    Console.WriteLine("polygon.isInside:  ({0},{1}) is in the {2}th ROI", e.X, e.Y, cnt++);
+                }
+            }
+
             if (!cbVitualFlame.Checked) return;
 
             if (e.Button == MouseButtons.Left)
@@ -958,6 +967,10 @@ namespace RealtimeFireDetection
             int g = src.G ^ 255;
             int b = src.B ^ 255;
             src = Color.FromArgb(r, g, b);
+        }
+
+        private void pbScreen_MouseMove(object sender, MouseEventArgs e)
+        {
         }
     }
 }

@@ -150,6 +150,7 @@ namespace RealtimeFireDetection
             this.pbScreen.TabIndex = 6;
             this.pbScreen.TabStop = false;
             this.pbScreen.MouseClick += new System.Windows.Forms.MouseEventHandler(this.pbScreen_MouseClick);
+            this.pbScreen.MouseMove += new System.Windows.Forms.MouseEventHandler(this.pbScreen_MouseMove);
             // 
             // groupBox2
             // 
