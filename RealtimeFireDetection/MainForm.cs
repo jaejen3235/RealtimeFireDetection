@@ -31,17 +31,14 @@ namespace RealtimeFireDetection
         List<System.Drawing.Point> virtualFlameList = new List<System.Drawing.Point>();
         object flameListLock = new object();
         //System.Drawing.Point tempFireAt = new System.Drawing.Point();
-        bool drawFlame = false;
 
         LogMessage message;
 
-        private int removeDays = 1;
         public string targetRecordPath;
         public string targetCapturePath;
         public string targetFirePath;
 
         private int fireCheckDuration = 10;
-        private int recordDuration = 10;
         private int NO_FIRE_WAIT_TIME = 10;
         public static double STANDARD_DEVIATION_LOW_LIMIT = 1.0;
         IniFile ini;
@@ -49,7 +46,6 @@ namespace RealtimeFireDetection
         Queue<Mat> matQueue = new Queue<Mat>();
         DateTime receivedEventTime = DateTime.Now;
 
-        int countWatchFlame = 0;
         double scaleDnW;
         double scaleDnH;
         double scaleUpW;
@@ -78,7 +74,7 @@ namespace RealtimeFireDetection
 
         private Bitmap saveFlameInfo(Mat image, List<Prediction> result, bool save = false)
         {
-            string strNow = DateTime.Now.ToString("yyyyMMddHHmmss");
+            string strNow = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             StreamWriter writer;
             string level = "";
 
@@ -178,8 +174,8 @@ namespace RealtimeFireDetection
                     writer.WriteLine(s);
                     ss = s.Trim().Split(',');
                     string sw = string.Format("L{0:D2} X:{1} Y:{2} W:{3} H:{4} C:{5:0.00}", cnt, ss[0], ss[1], ss[2], ss[3], ss[4]);
-                    g.DrawString(sw, fnt, new SolidBrush(Color.Black), 12, cnt * 10 + 15 + 2);
-                    g.DrawString(sw, fnt, new SolidBrush(Color.Yellow), 10, cnt * 10 + 15);
+                    g.DrawString(sw, fnt, new SolidBrush(Color.Black), 12, cnt * 10 + 45 + 2);
+                    g.DrawString(sw, fnt, new SolidBrush(Color.Yellow), 10, cnt * 10 + 45);
 
                     int.TryParse(ss[0], out x);
                     int.TryParse(ss[1], out y);
@@ -192,8 +188,6 @@ namespace RealtimeFireDetection
                     if (y < 0) y = 0;
                     if (x + w > bmp.Width) w = bmp.Width - (x + w);
                     if (y + h > bmp.Height) h = bmp.Height - (y + h);
-
-
 
                     if (w > 0 && h > 0)
                     {
@@ -217,7 +211,6 @@ namespace RealtimeFireDetection
             pbResult.Image = null;
             pbResult.Invalidate();
             detectorState = DetectorState.NO_FIRE;
-            countWatchFlame = 0;
             Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "Change state to NO_FIRE"), true);
             AddLogMessage(message);
             FlameList.Clear();
@@ -225,14 +218,13 @@ namespace RealtimeFireDetection
 
         private List<Prediction> DoYoLo(Mat image)
         {
-            float ratio = 0.0f;
-            OpenCvSharp.Point diff1 = new OpenCvSharp.Point();
-            OpenCvSharp.Point diff2 = new OpenCvSharp.Point();
+            //OpenCvSharp.Point diff1 = new OpenCvSharp.Point();
+            //OpenCvSharp.Point diff2 = new OpenCvSharp.Point();
             //var letter_image = YoloDetector.CreateLetterbox(image, new OpenCvSharp.Size(640, 384), new Scalar(114, 114, 114), out ratio, out diff1, out diff2);
             return detector.objectDetection(image);
         }
 
-        private bool checkIsInOrNot(List<Prediction> predictionList)
+        private bool checkROIin(List<Prediction> predictionList)
         {
             foreach (List<Point> list in RoiList)
             {
@@ -261,7 +253,6 @@ namespace RealtimeFireDetection
             stopwatch.Start();
             Mat matImage = null;
             bool isFirst = true;
-            int flameNo = 0;
             Stopwatch noFireWatch = new Stopwatch();
             noFireWatch.Stop();
             int matImageFailCount = 0;
@@ -279,7 +270,9 @@ namespace RealtimeFireDetection
                         Thread.Sleep(1000);
                         if (video.Open(CamUri))
                         {
+                            Console.WriteLine(DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + " Retry to Open");
                             matImageFailCount = 0;
+                            continue;
                         }
                         else
                         {
@@ -287,13 +280,16 @@ namespace RealtimeFireDetection
                             if (matImageFailCount > 10)
                             {
                                 matImageFailCount = 0;
-                                video.Dispose();
+                                video.Dispose(); video = null;
                                 Thread.Sleep(1000);
                                 video = new VideoCapture();
+                                Console.WriteLine(DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + "fail count more than 10,  new VideoCapture()");
                                 Thread.Sleep(1000);
                                 video.Open(CamUri);
+                                Console.WriteLine(DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + "fail count more than 10,  Open Uri");
                                 Thread.Sleep(1000);
                             }
+                            continue;
                         }
                     }
                     if (!image.Empty())
@@ -321,7 +317,7 @@ namespace RealtimeFireDetection
                         Cv2.Polylines(matImage, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
                         string dt = DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff");
                         //string fdt = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                        drawDateTimeOnTheMat(image, dt);
+                        drawDateTimeOnTheMat(matImage, dt);
 
 
                         Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
@@ -336,7 +332,7 @@ namespace RealtimeFireDetection
                                 using(Mat yoloImage = matImage.Clone())
                                 {
                                     var result = DoYoLo(yoloImage);
-                                    if (result.Count > 0 && checkIsInOrNot(result))
+                                    if (result.Count > 0 && checkROIin(result))
                                     {
                                         Bitmap bmpResult = saveFlameInfo(yoloImage, result);
                                         bmp = new Bitmap(bmpResult, resize);
@@ -375,6 +371,8 @@ namespace RealtimeFireDetection
             public Rectangle Area { get; set; }
             public double Confidence { get; set; }
             public double DiagonalLength { get; set; }
+
+            public double Deviation { get; set; }
 
             public double StandardDeviation { get; set; }
 
@@ -416,15 +414,29 @@ namespace RealtimeFireDetection
                     FlameInfoList.Add(info);
 
                     if (FlameInfoList.Count >= 11) FlameInfoList.RemoveAt(0);
-                    if (FlameInfoList.Count > 0)
+                    if (FlameInfoList.Count > 5)
                     {
-                        info.StandardDeviation = GetStandardDeviation();
+                        GetSDAll();
+                        //info.StandardDeviation = GetStandardDeviation();
                         //LogMessage msg;
                         //Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("NO {0} - Add flame count:{1} / SD {2} / info {3}", No , FlameInfoList.Count, info.StandardDeviation, info.ToString()), false);
                     }
                     return true;
                 }
                 return false;
+            }
+
+            private void GetSDAll()
+            {
+                double average;
+                double sumOfDeviation = 0;
+                var ret = FlameInfoList.Select(s => s.DiagonalLength);
+                average = ret.Average();
+                sumOfDeviation = FlameInfoList.Sum(info => Math.Pow(info.DiagonalLength - average, 2));
+                //분산 = Math.Pow(편차(개별값-평균값))의 합/자료갯수
+                //표준편차 = 분산의 제곱근
+                double result = Math.Sqrt(sumOfDeviation / FlameInfoList.Count());
+                FlameInfoList.Last().StandardDeviation = result;
             }
 
             private double GetStandardDeviation()
@@ -435,7 +447,7 @@ namespace RealtimeFireDetection
                 foreach (FlameInfo info in FlameInfoList)
                 {
                     sum += info.DiagonalLength;
-                    sumOfDerivation += (info.DiagonalLength) * (info.DiagonalLength);
+                    sumOfDerivation += info.DiagonalLength * info.DiagonalLength;
                 }
                 average = sum / FlameInfoList.Count;
                 double sumOfDerivationAverage = sumOfDerivation / FlameInfoList.Count;
@@ -455,20 +467,22 @@ namespace RealtimeFireDetection
 
             public void IsItFire(Action action)
             {
-                double sum = 0;
-                double avg = 0;
                 bool isAll = true;
-                for(int i=1;i<FlameInfoList.Count-1;i++)
+                if (FlameInfoList.Count >= 5)
                 {
-                    //검색된 영역의 모든 대각선이 지정된 값 이상인지 확인
-                    //sum += FlameInfoList.ElementAt(i).StandardDeviation;
-                    if (FlameInfoList.ElementAt(i).StandardDeviation <= STANDARD_DEVIATION_LOW_LIMIT)
+                    for (int i = 1; i < FlameInfoList.Count - 1; i++)
                     {
-                        isAll = false;
-                        break;
+                        //검색된 영역의 모든 대각선이 지정된 값 이상인지 확인
+                        //sum += FlameInfoList.ElementAt(i).StandardDeviation;
+                        if (FlameInfoList.ElementAt(i).StandardDeviation <= STANDARD_DEVIATION_LOW_LIMIT)
+                        {
+                            isAll = false;
+                            break;
+                        }
                     }
+                    //avg = sum / (FlameInfoList.Count - 1);
                 }
-                //avg = sum / (FlameInfoList.Count - 1);
+                else isAll = false;
 
                 //if (avg > STANDARD_DEVIATION_LOW_LIMIT)//화재
                 if (isAll)//화재
@@ -489,7 +503,6 @@ namespace RealtimeFireDetection
             override
             public string ToString()
             {
-                LogMessage msg;
                 StringBuilder sb = new StringBuilder();
                 sb.Append("\r\n");
                 foreach (FlameInfo info in FlameInfoList)
