@@ -99,6 +99,12 @@
     <Compile Include="Form1.Designer.cs">
       <DependentUpon>Form1.cs</DependentUpon>
     </Compile>
+    <Compile Include="FormRoi.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormRoi.Designer.cs">
+      <DependentUpon>FormRoi.cs</DependentUpon>
+    </Compile>
     <Compile Include="Logger\Logger.cs" />
     <Compile Include="Logger\LogMessage.cs" />
     <Compile Include="MainForm.cs">
@@ -109,12 +115,16 @@
     </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RoiObject.cs" />
     <Compile Include="UtilINI.cs" />
     <Compile Include="Yolov5\Labelmap.cs" />
     <Compile Include="Yolov5\Prediction.cs" />
     <Compile Include="Yolov5\YoloDetector.cs" />
     <EmbeddedResource Include="Form1.resx">
       <DependentUpon>Form1.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormRoi.resx">
+      <DependentUpon>FormRoi.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="MainForm.resx">
       <DependentUpon>MainForm.cs</DependentUpon>

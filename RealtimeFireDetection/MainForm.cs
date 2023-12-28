@@ -51,11 +51,23 @@ namespace RealtimeFireDetection
         double scaleUpW;
         double scaleUpH;
 
-        List<Point> Roi0 = new List<Point>();
+        List<Point> Roi = new List<Point>();
         List<List<Point>> RoiList = new List<List<Point>>();
-        List<Point> NonRoi0 = new List<Point>();
+        List<Point> NonRoi = new List<Point>();
         List<List<Point>> NonRoiList = new List<List<Point>>();
         Polygon polygon = new Polygon();
+
+
+
+        public Dictionary<string, List<Point>> DicRoiList
+        {
+            get;
+        }
+        public Dictionary<string, List<Point>> DicNonRoiList
+        {
+            get;
+        }
+
 
         enum DetectorState
         {
@@ -69,6 +81,10 @@ namespace RealtimeFireDetection
         public MainForm()
         {
             InitializeComponent();
+
+            DicRoiList = new Dictionary<string, List<Point>>();
+            DicNonRoiList = new Dictionary<string, List<Point>>();
+
             initApp();
         }
 
@@ -535,7 +551,7 @@ namespace RealtimeFireDetection
                 //crosses는 점q와 오른쪽 반직선과 다각형과의 교점의 개수
                 int crosses = 0;
                 int size = pList.Count;
-                // 점이 3개 이하로 이루어진 polygon은 없다.
+                // 점이 3개 미만으로 이루어진 polygon은 없다.
                 if (size < 3)
                 {
                     return false;
@@ -669,7 +685,6 @@ namespace RealtimeFireDetection
             Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("NO_FIRE_WAIT_TIME(SEC): {0}", NO_FIRE_WAIT_TIME), true);
             AddLogMessage(msg);
 
-
             flameIcons[0] = Bitmap.FromFile("./f01.png");
             flameIcons[1] = Bitmap.FromFile("./f02.png");
             flameIcons[2] = Bitmap.FromFile("./f03.png");
@@ -679,22 +694,22 @@ namespace RealtimeFireDetection
             flameIcons[6] = Bitmap.FromFile("./f07.png");
             flameIcons[7] = Bitmap.FromFile("./f08.png");
 
-            Roi0.Add(new OpenCvSharp.Point(63, 339));
-            Roi0.Add(new OpenCvSharp.Point(61, 300));
-            Roi0.Add(new OpenCvSharp.Point(106, 270));
-            Roi0.Add(new OpenCvSharp.Point(106, 234));
-            Roi0.Add(new OpenCvSharp.Point(72, 142));
-            Roi0.Add(new OpenCvSharp.Point(106, 115));
-            Roi0.Add(new OpenCvSharp.Point(100, 66));
-            Roi0.Add(new OpenCvSharp.Point(122, 46));
-            Roi0.Add(new OpenCvSharp.Point(122, 28));
-            Roi0.Add(new OpenCvSharp.Point(102, 18));
-            Roi0.Add(new OpenCvSharp.Point(102, 0));
-            Roi0.Add(new OpenCvSharp.Point(639, 0));
-            Roi0.Add(new OpenCvSharp.Point(639, 158));
-            Roi0.Add(new OpenCvSharp.Point(496, 231));
-            Roi0.Add(new OpenCvSharp.Point(330, 288));
-            RoiList.Add(Roi0);
+            Roi.Add(new OpenCvSharp.Point(63, 339));
+            Roi.Add(new OpenCvSharp.Point(61, 300));
+            Roi.Add(new OpenCvSharp.Point(106, 270));
+            Roi.Add(new OpenCvSharp.Point(106, 234));
+            Roi.Add(new OpenCvSharp.Point(72, 142));
+            Roi.Add(new OpenCvSharp.Point(106, 115));
+            Roi.Add(new OpenCvSharp.Point(100, 66));
+            Roi.Add(new OpenCvSharp.Point(122, 46));
+            Roi.Add(new OpenCvSharp.Point(122, 28));
+            Roi.Add(new OpenCvSharp.Point(102, 18));
+            Roi.Add(new OpenCvSharp.Point(102, 0));
+            Roi.Add(new OpenCvSharp.Point(639, 0));
+            Roi.Add(new OpenCvSharp.Point(639, 158));
+            Roi.Add(new OpenCvSharp.Point(496, 231));
+            Roi.Add(new OpenCvSharp.Point(330, 288));
+            RoiList.Add(Roi);
 
             doPlay = true;
             //bMin = DateTime.Now.Minute;
@@ -741,20 +756,23 @@ namespace RealtimeFireDetection
                 }
             }
 
-            if (!cbVitualFlame.Checked) return;
 
-            if (e.Button == MouseButtons.Left)
+
+            if (cbVitualFlame.Checked)  //가상 화염
             {
-                lock (flameListLock)
+                if (e.Button == MouseButtons.Left)
                 {
-                    virtualFlameList.Add(new System.Drawing.Point((int)(e.X * scaleUpW), (int)(e.Y * scaleUpH)));
+                    lock (flameListLock)
+                    {
+                        virtualFlameList.Add(new System.Drawing.Point((int)(e.X * scaleUpW), (int)(e.Y * scaleUpH)));
+                    }
                 }
-            }
-            else
-            {
-                lock (flameListLock)
+                else
                 {
-                    if(virtualFlameList.Count > 0) virtualFlameList.RemoveAt(0);
+                    lock (flameListLock)
+                    {
+                        if (virtualFlameList.Count > 0) virtualFlameList.RemoveAt(0);
+                    }
                 }
             }
         }
@@ -984,6 +1002,13 @@ namespace RealtimeFireDetection
 
         private void pbScreen_MouseMove(object sender, MouseEventArgs e)
         {
+        }
+
+        private void btRoiConfig_Click(object sender, EventArgs e)
+        {
+            Bitmap bitmap = (Bitmap)pbScreen.Image;
+            FormRoi fr = new FormRoi(bitmap, this);
+            fr.Show();
         }
     }
 }

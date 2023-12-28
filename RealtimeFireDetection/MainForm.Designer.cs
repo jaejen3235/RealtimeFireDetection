@@ -41,6 +41,7 @@ namespace RealtimeFireDetection
             this.pbScreen = new System.Windows.Forms.PictureBox();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
             this.lbLog = new System.Windows.Forms.ListBox();
+            this.btRoiConfig = new System.Windows.Forms.Button();
             this.groupBox1.SuspendLayout();
             this.groupBox6.SuspendLayout();
             this.groupBox5.SuspendLayout();
@@ -83,6 +84,7 @@ namespace RealtimeFireDetection
             // 
             // groupBox5
             // 
+            this.groupBox5.Controls.Add(this.btRoiConfig);
             this.groupBox5.Controls.Add(this.cbVitualFlame);
             this.groupBox5.Controls.Add(this.button1);
             this.groupBox5.Location = new System.Drawing.Point(8, 422);
@@ -94,7 +96,7 @@ namespace RealtimeFireDetection
             // cbVitualFlame
             // 
             this.cbVitualFlame.AutoSize = true;
-            this.cbVitualFlame.Location = new System.Drawing.Point(569, 27);
+            this.cbVitualFlame.Location = new System.Drawing.Point(472, 24);
             this.cbVitualFlame.Name = "cbVitualFlame";
             this.cbVitualFlame.Size = new System.Drawing.Size(76, 16);
             this.cbVitualFlame.TabIndex = 10;
@@ -104,7 +106,7 @@ namespace RealtimeFireDetection
             // 
             // button1
             // 
-            this.button1.Location = new System.Drawing.Point(10, 20);
+            this.button1.Location = new System.Drawing.Point(566, 17);
             this.button1.Name = "button1";
             this.button1.Size = new System.Drawing.Size(84, 29);
             this.button1.TabIndex = 9;
@@ -176,6 +178,16 @@ namespace RealtimeFireDetection
             this.lbLog.Size = new System.Drawing.Size(1328, 292);
             this.lbLog.TabIndex = 0;
             // 
+            // btRoiConfig
+            // 
+            this.btRoiConfig.Location = new System.Drawing.Point(10, 17);
+            this.btRoiConfig.Name = "btRoiConfig";
+            this.btRoiConfig.Size = new System.Drawing.Size(79, 28);
+            this.btRoiConfig.TabIndex = 11;
+            this.btRoiConfig.Text = "ROI Config";
+            this.btRoiConfig.UseVisualStyleBackColor = true;
+            this.btRoiConfig.Click += new System.EventHandler(this.btRoiConfig_Click);
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 12F);
@@ -218,5 +230,6 @@ namespace RealtimeFireDetection
         private System.Windows.Forms.Button button1;
         private System.Windows.Forms.CheckBox cbVitualFlame;
         private System.Windows.Forms.TextBox tbText;
+        private System.Windows.Forms.Button btRoiConfig;
     }
 }
