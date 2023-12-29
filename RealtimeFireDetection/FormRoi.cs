@@ -76,8 +76,13 @@ namespace RealtimeFireDetection
                 PointF endPoint = new PointF(i, centerYPosition + verticalLineHeightHalf);
                 g.DrawLine(gridLineColor, beginPoint, endPoint);
             }
-            if (TempPointList.Count > 1)
+            if (TempPointList.Count > 0)
             {
+                int h = 5, w = 5;
+                for(int j = 0; j < TempPointList.Count; j++)
+                {
+                    g.DrawEllipse(TempPolyPen, TempPointList.ElementAt(j).X - (w/2), TempPointList.ElementAt(j).Y - (h/2), w, h);
+                }
                 int i = 0;
                 for (i = 0; i < TempPointList.Count - 1; i++)
                 {
@@ -86,12 +91,15 @@ namespace RealtimeFireDetection
 
                 if (drawAreaState == DrawState.Started)
                 {
+                    g.DrawEllipse(TempPolyPen, currentPont.X - (w / 2), currentPont.Y - (h / 2), w, h);
                     g.DrawLine(TempPolyPen, TempPointList.ElementAt(i).X, TempPointList.ElementAt(i).Y, currentPont.X, currentPont.Y);
                 }
                 if (drawAreaState == DrawState.Closed)
                 {
                 }
             }
+
+            //lbRoi.
         }
 
         private void refreshRoiList()
@@ -216,6 +224,21 @@ namespace RealtimeFireDetection
                 mainForm.DicRoiList.Remove((string)lbRoi.SelectedItem);
 
                 refreshRoiList();
+            }
+        }
+
+        private void saveRegions(string fname, Dictionary<string, List<Point>> dic)
+        {
+            try
+            {
+
+            }catch(Exception e)
+            {
+
+            }
+            finally
+            {
+
             }
         }
 
