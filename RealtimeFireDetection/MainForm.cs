@@ -38,6 +38,9 @@ namespace RealtimeFireDetection
         public string targetCapturePath;
         public string targetFirePath;
 
+        public string PathRoiList = "./list_of_ROI.cfg";
+        public string PathNonRoiList = "./list_of_Non_ROI.cfg";
+
         private int fireCheckDuration = 10;
         private int NO_FIRE_WAIT_TIME = 10;
         public static double STANDARD_DEVIATION_LOW_LIMIT = 1.0;
@@ -86,6 +89,52 @@ namespace RealtimeFireDetection
             DicNonRoiList = new Dictionary<string, List<Point>>();
 
             initApp();
+            loadRegions(PathRoiList, DicRoiList);
+            loadRegions(PathNonRoiList, DicNonRoiList);
+        }
+
+        private void loadRegions(string path, Dictionary<string, List<Point>> dic)
+        {
+            StreamReader sr = null;
+
+            try
+            {
+                sr = new StreamReader(path);
+                if (sr == null) return;
+
+                string line = "";
+                string key;
+                string values;
+                string[] tmps;
+                dic.Clear();
+
+                while ((line = sr.ReadLine()) != null)
+                {
+                    key = line.Substring(line.IndexOf(":"));
+                    values = line.Substring(line.IndexOf(":") + 1, line.Length);
+                    tmps = values.Split(',');
+                    List<Point> list = new List<Point>();
+                    string[] xy;
+                    StringBuilder sb = new StringBuilder();
+
+                    foreach (string s in tmps)
+                    {
+                        xy = s.Split('-');
+                        list.Add(new Point(int.Parse(xy[0]), int.Parse(xy[1])));
+                        sb.Append(xy[0] + "-" + xy[1] + ",");
+                    }
+                    Console.WriteLine("LOAD Point Key: {0}, Value: {1}", key, sb.ToString());
+                    dic.Add(key, list);
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+            finally
+            {
+                if (sr != null) sr.Close();
+            }
         }
 
         private Bitmap saveFlameInfo(Mat image, List<Prediction> result, bool save = false)

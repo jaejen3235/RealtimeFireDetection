@@ -2,7 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 using Point = OpenCvSharp.Point;
 
@@ -118,6 +120,39 @@ namespace RealtimeFireDetection
             lbNonRoi.Invalidate();
         }
 
+        private void saveRegions(string path, Dictionary<string, List<Point>> dic)
+        {
+            FileStream fs = null;
+            StreamWriter sw = null;
+
+            try
+            {
+                fs = new FileStream(path, FileMode.OpenOrCreate);
+                sw = new StreamWriter(fs);
+                StringBuilder sb = new StringBuilder();
+
+                foreach (KeyValuePair<string, List<Point>> kv in dic)
+                {
+                    foreach (Point point in kv.Value)
+                    {
+                        sb.Append(point.X + "-" + point.Y + ",");
+                    }
+                    Console.WriteLine("SAVE Point Key: {0}, Value: {1}", kv.Key, sb.ToString().Substring(0, sb.ToString().Length - 1));
+                    sw.WriteLine(kv.Key + ":" + sb.ToString().Substring(0, sb.ToString().Length - 1));
+                    sb.Clear();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+            finally
+            {
+                if(sw != null) sw.Close();
+                if(fs != null) fs.Close();
+            }
+        }
+
         private void FormRoi_FormClosing(object sender, FormClosingEventArgs e)
         {
             if (MessageBox.Show("닫습니까?", "Form close", MessageBoxButtons.YesNo) == DialogResult.Yes)
@@ -227,24 +262,9 @@ namespace RealtimeFireDetection
             }
         }
 
-        private void saveRegions(string fname, Dictionary<string, List<Point>> dic)
-        {
-            try
-            {
-
-            }catch(Exception e)
-            {
-
-            }
-            finally
-            {
-
-            }
-        }
-
         private void btRoiSave_Click(object sender, EventArgs e)
         {
-
+            saveRegions(mainForm.PathRoiList, mainForm.DicRoiList);
         }
 
         private void btNonAdd_Click(object sender, EventArgs e)
@@ -282,7 +302,7 @@ namespace RealtimeFireDetection
 
         private void btNonSave_Click(object sender, EventArgs e)
         {
-
+            saveRegions(mainForm.PathNonRoiList, mainForm.DicNonRoiList);
         }
 
         public DialogResult InputBox(string title, string promptText, ref string value)
