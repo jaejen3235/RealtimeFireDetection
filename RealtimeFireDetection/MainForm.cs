@@ -388,7 +388,7 @@ namespace RealtimeFireDetection
                             }
                             Cv2.Polylines(matImage, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
                         }
-                        ///////////////////////////////////////////////////////////////////////////
+                        /////////////////////////////////////////////////////////////////////////// 
                         ///비관심영역
                         if (DicNonRoiList.Count > 0)
                         {
