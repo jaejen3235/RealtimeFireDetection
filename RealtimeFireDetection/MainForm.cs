@@ -99,8 +99,8 @@ namespace RealtimeFireDetection
 
             try
             {
+                if (!File.Exists(path)) return;
                 sr = new StreamReader(path);
-                if (sr == null) return;
 
                 string line = "";
                 string key;
@@ -110,8 +110,8 @@ namespace RealtimeFireDetection
 
                 while ((line = sr.ReadLine()) != null)
                 {
-                    key = line.Substring(line.IndexOf(":"));
-                    values = line.Substring(line.IndexOf(":") + 1, line.Length);
+                    key = line.Substring(0, line.IndexOf(":"));
+                    values = line.Substring(line.IndexOf(":") + 1);
                     tmps = values.Split(',');
                     List<Point> list = new List<Point>();
                     string[] xy;
@@ -379,11 +379,30 @@ namespace RealtimeFireDetection
 
                         ///////////////////////////////////////////////////////////////////////////
                         ///관심영역
-                        Cv2.Polylines(matImage, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
+                        if(DicRoiList.Count > 0)
+                        {
+                            RoiList.Clear();
+                            foreach (KeyValuePair<string, List<Point>> kv in DicRoiList)
+                            {
+                                RoiList.Add(kv.Value);
+                            }
+                            Cv2.Polylines(matImage, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
+                        }
+                        ///////////////////////////////////////////////////////////////////////////
+                        ///비관심영역
+                        if (DicNonRoiList.Count > 0)
+                        {
+                            NonRoiList.Clear();
+                            foreach (KeyValuePair<string, List<Point>> kv in DicNonRoiList)
+                            {
+                                NonRoiList.Add(kv.Value);
+                            }
+                            Cv2.FillPoly(matImage, NonRoiList, Scalar.Black);
+                        }
+                        ///Time-stamp
                         string dt = DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff");
                         //string fdt = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                         drawDateTimeOnTheMat(matImage, dt);
-
 
                         Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
                         bmp = new Bitmap(bmp, resize);
@@ -743,22 +762,22 @@ namespace RealtimeFireDetection
             flameIcons[6] = Bitmap.FromFile("./f07.png");
             flameIcons[7] = Bitmap.FromFile("./f08.png");
 
-            Roi.Add(new OpenCvSharp.Point(63, 339));
-            Roi.Add(new OpenCvSharp.Point(61, 300));
-            Roi.Add(new OpenCvSharp.Point(106, 270));
-            Roi.Add(new OpenCvSharp.Point(106, 234));
-            Roi.Add(new OpenCvSharp.Point(72, 142));
-            Roi.Add(new OpenCvSharp.Point(106, 115));
-            Roi.Add(new OpenCvSharp.Point(100, 66));
-            Roi.Add(new OpenCvSharp.Point(122, 46));
-            Roi.Add(new OpenCvSharp.Point(122, 28));
-            Roi.Add(new OpenCvSharp.Point(102, 18));
-            Roi.Add(new OpenCvSharp.Point(102, 0));
-            Roi.Add(new OpenCvSharp.Point(639, 0));
-            Roi.Add(new OpenCvSharp.Point(639, 158));
-            Roi.Add(new OpenCvSharp.Point(496, 231));
-            Roi.Add(new OpenCvSharp.Point(330, 288));
-            RoiList.Add(Roi);
+            //Roi.Add(new OpenCvSharp.Point(63, 339));
+            //Roi.Add(new OpenCvSharp.Point(61, 300));
+            //Roi.Add(new OpenCvSharp.Point(106, 270));
+            //Roi.Add(new OpenCvSharp.Point(106, 234));
+            //Roi.Add(new OpenCvSharp.Point(72, 142));
+            //Roi.Add(new OpenCvSharp.Point(106, 115));
+            //Roi.Add(new OpenCvSharp.Point(100, 66));
+            //Roi.Add(new OpenCvSharp.Point(122, 46));
+            //Roi.Add(new OpenCvSharp.Point(122, 28));
+            //Roi.Add(new OpenCvSharp.Point(102, 18));
+            //Roi.Add(new OpenCvSharp.Point(102, 0));
+            //Roi.Add(new OpenCvSharp.Point(639, 0));
+            //Roi.Add(new OpenCvSharp.Point(639, 158));
+            //Roi.Add(new OpenCvSharp.Point(496, 231));
+            //Roi.Add(new OpenCvSharp.Point(330, 288));
+            //RoiList.Add(Roi);
 
             doPlay = true;
             //bMin = DateTime.Now.Minute;

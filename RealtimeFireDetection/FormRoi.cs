@@ -1,5 +1,6 @@
 ﻿using OpenCvSharp;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -19,7 +20,9 @@ namespace RealtimeFireDetection
         private Pen gridLineColor;
         List<Point> TempPointList = new List<Point>();
         Point currentPont;
-        Pen TempPolyPen = new Pen(Color.Red, 1);
+        Pen TempPolyPen = new Pen(Color.Black, 1);
+        Pen RoiPolyPen = new Pen(Color.Red, 2);
+        Pen NonRoiPolyPen = new Pen(Color.Blue, 2);
 
         List<string> roiList;
         List<string> nonRoiList;
@@ -52,6 +55,9 @@ namespace RealtimeFireDetection
 
             lbRoi.DataSource = roiList;
             lbNonRoi.DataSource = nonRoiList;
+
+            lbRoi.ClearSelected();
+            lbNonRoi.ClearSelected();
         }
 
         private void Form_SizeChangedEventHandler(object sender, EventArgs e)
@@ -63,6 +69,7 @@ namespace RealtimeFireDetection
         {
             PictureBox pb = (PictureBox)sender;
             Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
             float centerYPosition = pb.Height / 2.0f;
 
@@ -78,6 +85,57 @@ namespace RealtimeFireDetection
                 PointF endPoint = new PointF(i, centerYPosition + verticalLineHeightHalf);
                 g.DrawLine(gridLineColor, beginPoint, endPoint);
             }
+
+
+            if(cbRoiShow.Checked && lbRoi.SelectedIndices.Count > 0) //Draw ROI list
+            {
+                IEnumerator it = lbRoi.SelectedItems.GetEnumerator();
+                List<Point> list = null;
+                string key;
+
+                while (it.MoveNext())
+                {
+                    key = (string)it.Current;
+                    mainForm.DicRoiList.TryGetValue(key, out list);
+                    if (list != null)
+                    {
+                        Point[] opcvPoints = list.ToArray();
+                        System.Drawing.PointF[] csPoints = new System.Drawing.PointF[opcvPoints.Length];
+                        int j = 0;
+                        foreach (Point p in opcvPoints)
+                        {
+                            csPoints[j++] = new System.Drawing.Point(p.X, p.Y);
+                        }
+                        g.DrawPolygon(RoiPolyPen, csPoints);
+                    }
+                }
+            }
+
+            if (cbNonRoiShow.Checked && lbNonRoi.SelectedIndices.Count > 0) //Draw None ROI list
+            {
+                IEnumerator it = lbNonRoi.SelectedItems.GetEnumerator();
+                List<Point> list = null;
+                string key;
+
+                while (it.MoveNext())
+                {
+                    key = (string)it.Current;
+                    mainForm.DicNonRoiList.TryGetValue(key, out list);
+                    if (list != null)
+                    {
+                        SolidBrush solidBlackBrush = new SolidBrush(Color.Black);
+                        Point[] opcvPoints = list.ToArray();
+                        System.Drawing.Point[] csPoints = new System.Drawing.Point[opcvPoints.Length];
+                        int j = 0;
+                        foreach (Point p in opcvPoints)
+                        {
+                            csPoints[j++] = new System.Drawing.Point(p.X, p.Y);
+                        }
+                        g.FillPolygon(solidBlackBrush, csPoints);
+                    }
+                }
+            }
+
             if (TempPointList.Count > 0)
             {
                 int h = 5, w = 5;
@@ -217,6 +275,7 @@ namespace RealtimeFireDetection
         {
             currentPont.X = e.X;
             currentPont.Y = e.Y;
+            tsMousePoint.Text = currentPont.X + ", " + currentPont.Y;
             if (TempPointList.Count == 0) return;
             pbArea.Invalidate();
         }
@@ -345,6 +404,16 @@ namespace RealtimeFireDetection
             DialogResult dialogResult = form.ShowDialog();
             value = textBox.Text;
             return dialogResult;
+        }
+
+        private void lbRoi_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if(cbRoiShow.Checked) pbArea.Invalidate();
+        }
+
+        private void lbNonRoi_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if(cbNonRoiShow.Checked) pbArea.Invalidate();
         }
     }
 }
