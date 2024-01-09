@@ -416,9 +416,17 @@ namespace RealtimeFireDetection
                                 using(Mat yoloImage = matImage.Clone())
                                 {
                                     var result = DoYoLo(yoloImage);
-                                    if (result.Count > 0 && checkROIin(result))
+                                    if (result != null) {
+                                        int c = 0;
+                                        foreach (Prediction p in result)
+                                        {
+                                            Console.WriteLine("Prediction {0}: {1}", c++, p.ToString());
+                                        }
+                                    }
+                                    //if (result.Count > 0 && checkROIin(result))
+                                    if (result != null && result.Count > 0)
                                     {
-                                        Bitmap bmpResult = saveFlameInfo(yoloImage, result);
+                                            Bitmap bmpResult = saveFlameInfo(yoloImage, result);
                                         bmp = new Bitmap(bmpResult, resize);
                                         pbResult.Image = bmp;
                                         detectorState = DetectorState.DETECT_FLAME;
@@ -456,10 +464,10 @@ namespace RealtimeFireDetection
             public double Confidence { get; set; }
             public double DiagonalLength { get; set; }
 
-            public double Deviation { get; set; }
+            public double Deviation2 { get; set; }
 
             public double StandardDeviation { get; set; }
-
+            
             override
             public string ToString()
             {
@@ -483,20 +491,13 @@ namespace RealtimeFireDetection
 
             public bool AddFlameInfo(FlameInfo info)
             {
-                if(FlameInfoList.Count == 0)
-                {
-                    info.DiagonalLength = GetDiagonalLength(info.Area.Width, info.Area.Height);
-                    FlameInfoList.Add(info);
-                    //LogMessage msg;
-                    //Logger.Logger.WriteLog(out msg, LogType.Info, No + " - " + "Add flame: " + info.ToString(), false);
-                    
-                    return true;
-                }
+                info.DiagonalLength = GetDiagonalLength(info.Area.Width, info.Area.Height);
+                FlameInfoList.Add(info);
+                //LogMessage msg;
+                //Logger.Logger.WriteLog(out msg, LogType.Info, No + " - " + "Add flame: " + info.ToString(), false);
+                if (FlameInfoList.Count < 2) return true;
                 if (IsSameFlame(info.Area))
                 {
-                    info.DiagonalLength = GetDiagonalLength(info.Area.Width, info.Area.Height);
-                    FlameInfoList.Add(info);
-
                     if (FlameInfoList.Count >= 11) FlameInfoList.RemoveAt(0);
                     if (FlameInfoList.Count > 5)
                     {
@@ -516,6 +517,13 @@ namespace RealtimeFireDetection
                 double sumOfDeviation = 0;
                 var ret = FlameInfoList.Select(s => s.DiagonalLength);
                 average = ret.Average();
+
+                //편차의 제곱 (편차가 큰 경우 실제 화재로 인식하기 위해..)
+                foreach (FlameInfo info in FlameInfoList)
+                {
+                    info.Deviation2 = Math.Pow(info.DiagonalLength - average, 2);
+                }
+
                 sumOfDeviation = FlameInfoList.Sum(info => Math.Pow(info.DiagonalLength - average, 2));
                 //분산 = Math.Pow(편차(개별값-평균값))의 합/자료갯수
                 //표준편차 = 분산의 제곱근
@@ -558,17 +566,22 @@ namespace RealtimeFireDetection
                     {
                         //검색된 영역의 모든 대각선이 지정된 값 이상인지 확인
                         //sum += FlameInfoList.ElementAt(i).StandardDeviation;
-                        if (FlameInfoList.ElementAt(i).StandardDeviation <= STANDARD_DEVIATION_LOW_LIMIT)
+                        //if (FlameInfoList.ElementAt(i).StandardDeviation <= STANDARD_DEVIATION_LOW_LIMIT)
+                        //{
+                        //    isAll = false;
+                        //    break;
+                        //}
+
+                        //20240109 표준편차가 아닌 편차의 제곱값을 이용하여 화재 판단으로 변경
+                        if (FlameInfoList.ElementAt(i).Deviation2 <= STANDARD_DEVIATION_LOW_LIMIT)
                         {
                             isAll = false;
                             break;
                         }
                     }
-                    //avg = sum / (FlameInfoList.Count - 1);
                 }
                 else isAll = false;
 
-                //if (avg > STANDARD_DEVIATION_LOW_LIMIT)//화재
                 if (isAll)//화재
                 {
                     if (state == DetectorState.NO_FIRE) action();
@@ -872,7 +885,7 @@ namespace RealtimeFireDetection
                     e.Graphics.DrawString(text, fnt, new SolidBrush(Color.ForestGreen), (pbScreen.Width - stringSize.Width) / 2, (pbScreen.Height - stringSize.Height) / 2);
                     break;
                 case DetectorState.DETECT_FLAME:
-                    text = "화염 발견";
+                    text = "화염 의심";
                     stringSize = e.Graphics.MeasureString(text, fnt);
                     e.Graphics.DrawString(text, fnt, new SolidBrush(Color.IndianRed), (pbScreen.Width - stringSize.Width) / 2, (pbScreen.Height - stringSize.Height) / 2);
                     break;
