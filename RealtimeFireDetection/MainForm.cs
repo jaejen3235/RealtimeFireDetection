@@ -1,4 +1,5 @@
-﻿using OpenCvSharp;
+﻿using IPC4Fire;
+using OpenCvSharp;
 using RealtimeFireDetection.Logger;
 using RealtimeFireDetection.Yolov5;
 using System;
@@ -42,8 +43,18 @@ namespace RealtimeFireDetection
         public string PathNonRoiList = "./list_of_Non_ROI.cfg";
 
         private int fireCheckDuration = 10;
+        //FRAME_COUNT_WARN=10
+        private int frameCountWarn = 10;
+        //WARN_THRESHOLD(%)=50
+        private double thresholeWarnRate = 0.5;
+        //FRAME_COUNT_OCCUR=10
+        private int frameCountOccur = 10;
+        //OCCUR_THRESHOLD(%)=50
+        private double thresholeWarnOccur = 0.5;
+
         private int NO_FIRE_WAIT_TIME = 10;
         public static double STANDARD_DEVIATION_LOW_LIMIT = 1.0;
+
         IniFile ini;
         string CamUri;
         Queue<Mat> matQueue = new Queue<Mat>();
@@ -60,7 +71,7 @@ namespace RealtimeFireDetection
         List<List<Point>> NonRoiList = new List<List<Point>>();
         Polygon polygon = new Polygon();
 
-
+        RemoteObject remoteObject; //Communicate with SendEdgeFire("Edge Monitor for Fire 1.0.0)
 
         public Dictionary<string, List<Point>> DicRoiList
         {
@@ -70,7 +81,6 @@ namespace RealtimeFireDetection
         {
             get;
         }
-
 
         enum DetectorState
         {
@@ -220,11 +230,17 @@ namespace RealtimeFireDetection
 
             foreach (Flame flame in FlameList)
             {
-                flame.IsItFire(() => {
-                    Console.WriteLine("Invoked flame.IsItFire");
-                    save = true;
-                });
-                if(save) break;
+                if(flame.state == DetectorState.NO_FIRE)
+                {
+                    flame.IsItFire(() => {
+                        Console.WriteLine("Invoked flame.IsItFire");
+                        save = true;
+                        remoteObject.Str = flame.getFlameInfoList();
+                        remoteObject.Count++;
+                    });
+
+                    if (save) break;
+                }
             }
             
             if (save)
@@ -261,7 +277,8 @@ namespace RealtimeFireDetection
                         makeRColor(ref croppedBitmap);
                         int red = 0, green = 0, blue = 0;
                         makeRGB_Average(croppedBitmap, ref red, ref green, ref blue);
-                        croppedBitmap.Save(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_" + string.Format("L{0:D2}_{1},{2},{3}", cnt, red, green, blue) +"_cropped.bmp", ImageFormat.Bmp);
+                        //20240110 중심부 조각 이미지 저장은 Putting it off until being certain
+                        //croppedBitmap.Save(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_" + string.Format("L{0:D2}_{1},{2},{3}", cnt, red, green, blue) +"_cropped.bmp", ImageFormat.Bmp);
                     }
                     cnt++;
                 }
@@ -426,7 +443,7 @@ namespace RealtimeFireDetection
                                     //if (result.Count > 0 && checkROIin(result))
                                     if (result != null && result.Count > 0)
                                     {
-                                            Bitmap bmpResult = saveFlameInfo(yoloImage, result);
+                                        Bitmap bmpResult = saveFlameInfo(yoloImage, result);
                                         bmp = new Bitmap(bmpResult, resize);
                                         pbResult.Image = bmp;
                                         detectorState = DetectorState.DETECT_FLAME;
@@ -468,10 +485,15 @@ namespace RealtimeFireDetection
 
             public double StandardDeviation { get; set; }
             
+            public string GetRegionInfo()
+            {
+                return string.Format("{0},{1},{2},{3},{4:0.00}", Area.X, Area.Y, Area.Width, Area.Height, Confidence);
+            }
+
             override
             public string ToString()
             {
-                return string.Format("Location X:{0}  Y:{1}  W:{2}  H:{3}  Confidence:{4:0.00}  DiagonalLength:{5:0.00}  StandardDeviation:{6:0.00}", Area.X, Area.Y, Area.Width, Area.Height, Confidence, DiagonalLength, StandardDeviation);
+                return string.Format("Location X:{0}  Y:{1}  W:{2}  H:{3}  Confidence:{4:0.00}  DiagonalLength:{5:0.00}  StandardDeviation:{6:0.00}  Deviation2:{7:0.00}", Area.X, Area.Y, Area.Width, Area.Height, Confidence, DiagonalLength, StandardDeviation, Deviation2);
             }
         }
 
@@ -557,11 +579,16 @@ namespace RealtimeFireDetection
                 return Math.Sqrt(Math.Pow(w, 2) + Math.Pow(h, 2));
             }
 
-            public void IsItFire(Action action)
+            public string IsItFire(Action action)
             {
                 bool isAll = true;
                 if (FlameInfoList.Count >= 5)
                 {
+
+
+                    
+
+
                     for (int i = 1; i < FlameInfoList.Count - 1; i++)
                     {
                         //검색된 영역의 모든 대각선이 지정된 값 이상인지 확인
@@ -579,8 +606,7 @@ namespace RealtimeFireDetection
                             break;
                         }
                     }
-                }
-                else isAll = false;
+                }else isAll = false;
 
                 if (isAll)//화재
                 {
@@ -589,12 +615,20 @@ namespace RealtimeFireDetection
                 }
                 else
                 {
-                    if (state != DetectorState.NO_FIRE)
-                    {
-                        //action();
-                    }
                     state = DetectorState.NO_FIRE;
                 }
+                return "";
+            }
+
+            public string getFlameInfoList()
+            {
+                StringBuilder sb = new StringBuilder();
+                foreach(FlameInfo info in FlameInfoList)
+                {
+                    sb.Append(info.GetRegionInfo()).Append("|");
+                }
+                sb.Remove(sb.Length - 1, 1);
+                return sb.ToString();
             }
 
             override
@@ -775,23 +809,6 @@ namespace RealtimeFireDetection
             flameIcons[6] = Bitmap.FromFile("./f07.png");
             flameIcons[7] = Bitmap.FromFile("./f08.png");
 
-            //Roi.Add(new OpenCvSharp.Point(63, 339));
-            //Roi.Add(new OpenCvSharp.Point(61, 300));
-            //Roi.Add(new OpenCvSharp.Point(106, 270));
-            //Roi.Add(new OpenCvSharp.Point(106, 234));
-            //Roi.Add(new OpenCvSharp.Point(72, 142));
-            //Roi.Add(new OpenCvSharp.Point(106, 115));
-            //Roi.Add(new OpenCvSharp.Point(100, 66));
-            //Roi.Add(new OpenCvSharp.Point(122, 46));
-            //Roi.Add(new OpenCvSharp.Point(122, 28));
-            //Roi.Add(new OpenCvSharp.Point(102, 18));
-            //Roi.Add(new OpenCvSharp.Point(102, 0));
-            //Roi.Add(new OpenCvSharp.Point(639, 0));
-            //Roi.Add(new OpenCvSharp.Point(639, 158));
-            //Roi.Add(new OpenCvSharp.Point(496, 231));
-            //Roi.Add(new OpenCvSharp.Point(330, 288));
-            //RoiList.Add(Roi);
-
             doPlay = true;
             //bMin = DateTime.Now.Minute;
             //CamThread = new Thread(playCam)
@@ -804,6 +821,8 @@ namespace RealtimeFireDetection
 
         private void MainForm_Load(object sender, EventArgs e)
         {
+            RemoteObject.CreateServer();
+            remoteObject = new RemoteObject();
             pbResult.Update();
         }
 
@@ -813,6 +832,12 @@ namespace RealtimeFireDetection
             if (!info.Exists) info.Create();
             //info = new DirectoryInfo(targetRecordPath);
             //if (!info.Exists) info.Create();
+        }
+
+        private void UpdateRemoteMessage(string msg)
+        {
+            remoteObject.Str = msg;
+            remoteObject.Count++;
         }
 
         public void AddLogMessage(LogMessage message)
@@ -836,8 +861,6 @@ namespace RealtimeFireDetection
                     Console.WriteLine("polygon.isInside:  ({0},{1}) is in the {2}th ROI", e.X, e.Y, cnt++);
                 }
             }
-
-
 
             if (cbVitualFlame.Checked)  //가상 화염
             {
