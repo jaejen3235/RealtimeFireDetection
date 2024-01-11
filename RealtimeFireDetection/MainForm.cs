@@ -251,8 +251,10 @@ namespace RealtimeFireDetection
             {
                 if(flame.state == DetectorState.NO_FIRE)
                 {
-                    flame.IsItFire(() => {
-                        Console.WriteLine("Invoked flame.IsItFire");
+                    flame.IsItFlame(() => {
+                        //Console.WriteLine("Invoked flame.IsItFire");
+                        Logger.Logger.WriteLog(out message, LogType.Info, "화염 발견", false);
+                        AddLogMessage(message);
                         saveCnt++;
                         save = true;
                     });
@@ -261,7 +263,23 @@ namespace RealtimeFireDetection
                     {
                         sbFlameInfos.Append(flame.getMaxConfidenceInfo()).Append("|");
                         save = false;
-                        //break; 20240111 모든 화염정보에서 Confidence가 최고값인 정보들을 모아 LoRa 전송하기 위해...
+                        //break; 20240111 모든 화염정보에서 Confidence가 WARN_THRESHOLD 보다 큰 정보들을 모아 LoRa 전송하기 위해...
+                    }
+                }
+                else if (flame.state == DetectorState.DETECT_FLAME)
+                {
+                    flame.IsItFire(() => {
+                        Logger.Logger.WriteLog(out message, LogType.Info, "화재 발생", false);
+                        AddLogMessage(message);
+                        saveCnt++;
+                        save = true;
+                    });
+
+                    if (save)
+                    {
+                        sbFlameInfos.Append(flame.getMaxConfidenceInfo()).Append("|");
+                        save = false;
+                        //break; 20240111 모든 화염정보에서 Confidence가 OCCUR_THRESHOLD 보다 큰 정보들을 모아 LoRa 전송하기 위해...
                     }
                 }
             }
