@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.IO.Ports;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -24,6 +25,17 @@ namespace RealtimeFireDetection
         string APP_NAME = "FireDetector";
         string VER = "1.0.0";
         //public static string LocalName = "";
+        public static SerialPort LoRaSerialPort; // = new SerialPort();
+        private StringBuilder sbLoRaReceiveData; // = new StringBuilder();
+        private DateTime lastLoRaTxRxTime;
+
+        private string comport;
+        private string baudRate = "115200";
+        private bool rbLoRaReceiveASCII = true;
+
+        private Thread threadDoWork;
+        private bool bThreadDoWorkRun = false;
+        private int bSec = -1;
 
         private bool doPlay;
         Thread CamThread;
@@ -46,11 +58,11 @@ namespace RealtimeFireDetection
         //FRAME_COUNT_WARN=10
         private int frameCountWarn = 10;
         //WARN_THRESHOLD(%)=50
-        private double thresholeWarnRate = 0.5;
+        private double thresholdWarnRate = 0.5;
         //FRAME_COUNT_OCCUR=10
         private int frameCountOccur = 10;
         //OCCUR_THRESHOLD(%)=50
-        private double thresholeWarnOccur = 0.5;
+        private double thresholdOccurRate = 0.5;
 
         private int NO_FIRE_WAIT_TIME = 10;
         public static double STANDARD_DEVIATION_LOW_LIMIT = 1.0;
@@ -194,29 +206,33 @@ namespace RealtimeFireDetection
 
                 ///////////////////////////////////////////////////////////////////////////
                 ///화염 판단
-                if (FlameList.Count == 0)
+                if (FlameList.Count == 0)   //최초 화염
                 {
-                    Flame flame = new Flame(strNow);
-                    flame.AddFlameInfo(info);
+                    Flame flame = new Flame(this, strNow);
+                    flame.AddFirstFlameInfo(info);
                     FlameList.Add(flame);
+                    Logger.Logger.WriteLog(out message, LogType.Info, "초기 Flame Count: " + FlameList.Count, false);
+                    Logger.Logger.WriteLog(out message, LogType.Info, "Flame ID " + flame.ID + ", Add info [" + flame.ToString() + "]", false);
                     continue;
                 }
 
-                foreach (Flame flame in FlameList)
+                foreach (Flame flame in FlameList) //기존 화염 위치인가?
                 {
                     if (flame.AddFlameInfo(info))
                     {
+                        Logger.Logger.WriteLog(out message, LogType.Info, "기존 Flame Count: " + FlameList.Count, false);
                         Logger.Logger.WriteLog(out message, LogType.Info, "Flame ID " + flame.ID + ", Add info [" + flame.ToString() + "]", false);
                         isNewFlameInfo = false;
                         break;
                     }
                 }
 
-                if (isNewFlameInfo)
+                if (isNewFlameInfo) //새로운 위치의 화염
                 {
-                    Flame flame = new Flame(strNow);
-                    flame.AddFlameInfo(info);
+                    Flame flame = new Flame(this, strNow);
+                    flame.AddFirstFlameInfo(info);
                     FlameList.Add(flame);
+                    Logger.Logger.WriteLog(out message, LogType.Info, "새로운 Flame Count: " + FlameList.Count, false);
                     Logger.Logger.WriteLog(out message, LogType.Info, "Flame ID " + flame.ID + ", Add new & info [" + flame.ToString() + "]", false);
                 }
             }//foreach (var obj in result)
@@ -228,23 +244,33 @@ namespace RealtimeFireDetection
             Graphics g = Graphics.FromImage(bmp);
             string[] tmps = sb.ToString().Trim().Split('/');
 
+
+            StringBuilder sbFlameInfos = new StringBuilder();
+            int saveCnt = 0;
             foreach (Flame flame in FlameList)
             {
                 if(flame.state == DetectorState.NO_FIRE)
                 {
                     flame.IsItFire(() => {
                         Console.WriteLine("Invoked flame.IsItFire");
+                        saveCnt++;
                         save = true;
-                        remoteObject.Str = flame.getFlameInfoList();
-                        remoteObject.Count++;
                     });
 
-                    if (save) break;
+                    if (save)
+                    {
+                        sbFlameInfos.Append(flame.getMaxConfidenceInfo()).Append("|");
+                        save = false;
+                        //break; 20240111 모든 화염정보에서 Confidence가 최고값인 정보들을 모아 LoRa 전송하기 위해...
+                    }
                 }
             }
             
-            if (save)
+            if (saveCnt > 0)
             {
+                //화재정보 전달 -> LoRa 모듈
+                UpdateRemoteMessage("FIRE:" + sbFlameInfos.Remove(sbFlameInfos.Length - 1, 1).ToString());
+
                 writer = File.CreateText(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_result" + ".txt");
                 Font fnt = new Font("Arial", 8, FontStyle.Regular);
                 int cnt = 1;
@@ -296,6 +322,8 @@ namespace RealtimeFireDetection
             Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "Change state to NO_FIRE"), true);
             AddLogMessage(message);
             FlameList.Clear();
+            //화재정보 전달 -> LoRa 모듈
+            UpdateRemoteMessage("NO_FIRE");
         }
 
         private List<Prediction> DoYoLo(Mat image)
@@ -433,13 +461,14 @@ namespace RealtimeFireDetection
                                 using(Mat yoloImage = matImage.Clone())
                                 {
                                     var result = DoYoLo(yoloImage);
-                                    if (result != null) {
-                                        int c = 0;
-                                        foreach (Prediction p in result)
-                                        {
-                                            Console.WriteLine("Prediction {0}: {1}", c++, p.ToString());
-                                        }
-                                    }
+                                    //if (result != null) {
+                                    //    int c = 0;
+                                    //    foreach (Prediction p in result)
+                                    //    {
+                                    //        Console.WriteLine("Prediction {0}: {1}", c++, p.ToString());
+                                    //    }
+                                    //}
+                                    
                                     //if (result.Count > 0 && checkROIin(result))
                                     if (result != null && result.Count > 0)
                                     {
@@ -501,33 +530,38 @@ namespace RealtimeFireDetection
 
         class Flame
         {
+            MainForm mf;
             public DetectorState state = DetectorState.NO_FIRE;
             public string ID { get; set; }
             public List<FlameInfo> FlameInfoList = new List<FlameInfo>();
             
-            public Flame(string id)
+            public Flame(MainForm mf, string id)
             {
+                this.mf = mf;
                 this.ID = id;
                 state = DetectorState.NO_FIRE;
             }
 
-            public bool AddFlameInfo(FlameInfo info)
+            public void AddFirstFlameInfo(FlameInfo info)
             {
                 info.DiagonalLength = GetDiagonalLength(info.Area.Width, info.Area.Height);
                 FlameInfoList.Add(info);
+                GetSDAll();
+            }
+
+            public bool AddFlameInfo(FlameInfo info)
+            {
                 //LogMessage msg;
                 //Logger.Logger.WriteLog(out msg, LogType.Info, No + " - " + "Add flame: " + info.ToString(), false);
-                if (FlameInfoList.Count < 2) return true;
+
+
+                //if (FlameInfoList.Count < 2) return true;
                 if (IsSameFlame(info.Area))
                 {
-                    if (FlameInfoList.Count >= 11) FlameInfoList.RemoveAt(0);
-                    if (FlameInfoList.Count > 5)
-                    {
-                        GetSDAll();
-                        //info.StandardDeviation = GetStandardDeviation();
-                        //LogMessage msg;
-                        //Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("NO {0} - Add flame count:{1} / SD {2} / info {3}", No , FlameInfoList.Count, info.StandardDeviation, info.ToString()), false);
-                    }
+                    if (FlameInfoList.Count > mf.frameCountWarn) FlameInfoList.RemoveAt(0);
+                    info.DiagonalLength = GetDiagonalLength(info.Area.Width, info.Area.Height);
+                    FlameInfoList.Add(info);
+                    GetSDAll();
                     return true;
                 }
                 return false;
@@ -579,36 +613,41 @@ namespace RealtimeFireDetection
                 return Math.Sqrt(Math.Pow(w, 2) + Math.Pow(h, 2));
             }
 
-            public string IsItFire(Action action)
+            public string getMaxConfidenceInfo()
+            {
+                int index = 0;
+                double con = -0.1;
+                FlameInfo info;
+
+                for (int i = 0; i < FlameInfoList.Count; i++)
+                {
+                    info = FlameInfoList[i];
+                    if (info.Confidence > con)
+                    {
+                        con = info.Confidence;
+                        index = i;
+                    }
+                }
+                return FlameInfoList[index].GetRegionInfo();
+            }
+
+            public string IsItFlame(Action action)
             {
                 bool isAll = true;
-                if (FlameInfoList.Count >= 5)
+                if (FlameInfoList.Count >= mf.frameCountWarn)
                 {
+                    double avg_confidence = FlameInfoList.Average(info => info.Confidence);
 
-
-                    
-
-
-                    for (int i = 1; i < FlameInfoList.Count - 1; i++)
+                    if(mf.thresholdWarnRate <= avg_confidence)
                     {
-                        //검색된 영역의 모든 대각선이 지정된 값 이상인지 확인
-                        //sum += FlameInfoList.ElementAt(i).StandardDeviation;
-                        //if (FlameInfoList.ElementAt(i).StandardDeviation <= STANDARD_DEVIATION_LOW_LIMIT)
-                        //{
-                        //    isAll = false;
-                        //    break;
-                        //}
-
-                        //20240109 표준편차가 아닌 편차의 제곱값을 이용하여 화재 판단으로 변경
-                        if (FlameInfoList.ElementAt(i).Deviation2 <= STANDARD_DEVIATION_LOW_LIMIT)
-                        {
-                            isAll = false;
-                            break;
-                        }
+                        LogMessage msg;
+                        Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("Flame check threshold warn {0:0.00}, avg {1:0.00}", mf.thresholdWarnRate, avg_confidence), false);
+                        mf.AddLogMessage(msg);
                     }
-                }else isAll = false;
+                }
+                else isAll = false;
 
-                if (isAll)//화재
+                if (isAll)//화염 감지
                 {
                     if (state == DetectorState.NO_FIRE) action();
                     state = DetectorState.DETECT_FLAME;
@@ -616,6 +655,53 @@ namespace RealtimeFireDetection
                 else
                 {
                     state = DetectorState.NO_FIRE;
+                }
+                return "";
+            }
+
+            public string IsItFire(Action action)
+            {
+                bool isAll = true;
+                if (FlameInfoList.Count >= mf.frameCountOccur)
+                {
+                    //20240111 confidence 평균값으로 INI의 설정값과 비교 (occur_threshold)하여 화재 판단으로 변경
+                    //for (int i = 0; i < FlameInfoList.Count; i++)
+                    //{
+                    //    //검색된 영역의 모든 대각선이 지정된 값 이상인지 확인
+                    //    //sum += FlameInfoList.ElementAt(i).StandardDeviation;
+                    //    //if (FlameInfoList.ElementAt(i).StandardDeviation <= STANDARD_DEVIATION_LOW_LIMIT)
+                    //    //{
+                    //    //    isAll = false;
+                    //    //    break;
+                    //    //}
+                    //    //20240109 표준편차가 아닌 편차의 제곱값을 이용하여 화재 판단으로 변경
+                    //    if (FlameInfoList.ElementAt(i).Deviation2 <= STANDARD_DEVIATION_LOW_LIMIT)
+                    //    {
+                    //        isAll = false;
+                    //        break;
+                    //    }
+                    //}
+
+                    double avg_confidence = FlameInfoList.Average(info => info.Confidence);
+                    if (mf.thresholdOccurRate <= avg_confidence)
+                    {
+                        LogMessage msg;
+                        Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("Fire check threshold occur {0:0.00}, avg {1:0.00}", mf.thresholdWarnRate, avg_confidence), false);
+                        mf.AddLogMessage(msg);
+                        isAll = true;
+                    }
+                    else isAll = false;
+                }
+                else isAll = false;
+
+                if (isAll)//화재
+                {
+                    if (state == DetectorState.DETECT_FLAME) action();
+                    state = DetectorState.MONITORING_FIRE;
+                }
+                else
+                {
+                    state = DetectorState.DETECT_FLAME;
                 }
                 return "";
             }
@@ -770,16 +856,10 @@ namespace RealtimeFireDetection
             targetFirePath = ini.Read("PATH_FIRE_IMAGE", "MAIN");
             Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("PATH_FIRE_IMAGE: {0}", targetFirePath), true);
             AddLogMessage(msg);
-            Console.WriteLine("[INI] fire path: {0}", targetFirePath);
             makeFolders(targetFirePath);
 
-            tmp = ini.Read("DURATION_FIRE_CHECK(SEC)", "MAIN");
-            if (!int.TryParse(tmp, out fireCheckDuration))
-            {
-                Logger.Logger.WriteLog(out msg, LogType.Error, "DURATION_FIRE_CHECK(SEC) Not a Number", true);
-                AddLogMessage(msg);
-            }
-            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("DURATION_FIRE_CHECK(SEC): {0}", fireCheckDuration), true);
+            comport = ini.Read("LORA_PORT", "MAIN");
+            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("LORA_PORT: {0}", comport), true);
             AddLogMessage(msg);
 
             tmp = ini.Read("STANDARD_DEVIATION_LOW_LIMIT", "MAIN");
@@ -800,6 +880,53 @@ namespace RealtimeFireDetection
             Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("NO_FIRE_WAIT_TIME(SEC): {0}", NO_FIRE_WAIT_TIME), true);
             AddLogMessage(msg);
 
+            tmp = ini.Read("DURATION_FIRE_CHECK(SEC)", "MAIN");
+            if (!int.TryParse(tmp, out fireCheckDuration))
+            {
+                Logger.Logger.WriteLog(out msg, LogType.Error, "DURATION_FIRE_CHECK(SEC) Not a Number", true);
+                AddLogMessage(msg);
+            }
+            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("DURATION_FIRE_CHECK(SEC): {0}", fireCheckDuration), true);
+            AddLogMessage(msg);
+
+            tmp = ini.Read("FRAME_COUNT_WARN", "MAIN");
+            if (!int.TryParse(tmp, out frameCountWarn))
+            {
+                Logger.Logger.WriteLog(out msg, LogType.Error, "FRAME_COUNT_WARN Not a Number", true);
+                AddLogMessage(msg);
+            }
+            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("FRAME_COUNT_WARN: {0}", frameCountWarn), true);
+            AddLogMessage(msg);
+
+            tmp = ini.Read("WARN_THRESHOLD(%)", "MAIN");
+            if (!double.TryParse(tmp, out thresholdWarnRate))
+            {
+                Logger.Logger.WriteLog(out msg, LogType.Error, "WARN_THRESHOLD(%) Not a Number", true);
+                AddLogMessage(msg);
+            }
+            thresholdWarnRate = thresholdWarnRate / 100.0;
+            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("WARN_THRESHOLD(%): {0}", thresholdWarnRate), true);
+            AddLogMessage(msg);
+
+            tmp = ini.Read("FRAME_COUNT_OCCUR", "MAIN");
+            if (!int.TryParse(tmp, out frameCountOccur))
+            {
+                Logger.Logger.WriteLog(out msg, LogType.Error, "FRAME_COUNT_OCCUR Not a Number", true);
+                AddLogMessage(msg);
+            }
+            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("FRAME_COUNT_OCCUR: {0}", frameCountOccur), true);
+            AddLogMessage(msg);
+
+            tmp = ini.Read("OCCUR_THRESHOLD(%)", "MAIN");
+            if (!double.TryParse(tmp, out thresholdOccurRate))
+            {
+                Logger.Logger.WriteLog(out msg, LogType.Error, "OCCUR_THRESHOLD(%) Not a Number", true);
+                AddLogMessage(msg);
+            }
+            thresholdOccurRate = thresholdOccurRate / 100.0;
+            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("OCCUR_THRESHOLD(%): {0}", thresholdOccurRate), true);
+            AddLogMessage(msg);
+
             flameIcons[0] = Bitmap.FromFile("./f01.png");
             flameIcons[1] = Bitmap.FromFile("./f02.png");
             flameIcons[2] = Bitmap.FromFile("./f03.png");
@@ -808,6 +935,9 @@ namespace RealtimeFireDetection
             flameIcons[5] = Bitmap.FromFile("./f06.png");
             flameIcons[6] = Bitmap.FromFile("./f07.png");
             flameIcons[7] = Bitmap.FromFile("./f08.png");
+
+            InitSerialPort();
+
 
             doPlay = true;
             //bMin = DateTime.Now.Minute;
@@ -819,11 +949,426 @@ namespace RealtimeFireDetection
             CamThread.Start();
         }
 
+        private void InitSerialPort()
+        {
+            string[] str = SerialPort.GetPortNames();
+            if (str == null)
+            {
+                Logger.Logger.WriteLog(out message, Logger.LogType.Info, "Can't find any serial port.", true);
+                return;
+            }
+            LoRaSerialPort = new SerialPort();
+            sbLoRaReceiveData = new StringBuilder();
+            LoRaSerialPort.DataReceived += new SerialDataReceivedEventHandler(loraDataReceived);
+            LoRaSerialPort.DtrEnable = true;
+            LoRaSerialPort.RtsEnable = true;
+            LoRaSerialPort.ReadTimeout = 1000;
+            LoRaSerialPort.Close();
+
+            try
+            {
+                Int32 iBaudRate = Convert.ToInt32(baudRate);
+                Int32 iDataBit = 8;
+                LoRaSerialPort.PortName = comport;
+                LoRaSerialPort.BaudRate = iBaudRate;
+                LoRaSerialPort.DataBits = iDataBit;
+                LoRaSerialPort.StopBits = StopBits.One;
+                LoRaSerialPort.Parity = Parity.None;
+                LoRaSerialPort.Open();
+                Logger.Logger.WriteLog(out message, Logger.LogType.Info, "Open a LoRa serial port", true);
+                lastLoRaTxRxTime = DateTime.Now;
+            }
+            catch (System.Exception ex)
+            {
+                Logger.Logger.WriteLog(out message, Logger.LogType.Error, ex.Message, true);
+                return;
+            }
+        }
+
+        class DetectionObject
+        {
+            public byte LocX
+            {
+                set; get;
+            }
+            public byte LocY
+            {
+                set; get;
+            }
+            public byte Width
+            {
+                set; get;
+            }
+            public byte Height
+            {
+                set; get;
+            }
+            public byte Confidence
+            {
+                set; get;
+            }
+
+            DetectionObject()
+            {
+                LocX = 0x00;
+                LocY = 0x00;
+                Width = 0x00;
+                Height = 0x00;
+                Confidence = 0x00;
+            }
+        }
+
+        private DetectionObject[] MakeLoRaData()
+        {
+            DetectionObject[] dtos = new DetectionObject[6];
+            int flameCount = 0;
+            foreach(Flame flame in FlameList)
+            {
+                if(flame.state == DetectorState.DETECT_FLAME)
+                {
+
+                }
+            }
+
+        }
+
+        private void ThreadDoWork()
+        {
+            int threadStep = 0;
+            int bStep = 0;
+            //Thread t2 = new Thread(new ParameterizedThreadStart(Calc));
+            //t2.Start(10.00);
+            byte[] bs = null;
+            int detectObjectIndex = 0;
+            int threadStepStayCnt = 0;
+            DetectionObject[] detectionArray = null;
+            while (bThreadDoWorkRun)
+            {
+                //Console.WriteLine("ThreadDoWork step: {0}", threadStep);
+                switch (threadStep)
+                {
+                    default:
+                        threadStep = 0;
+                        break;
+                    case 0:
+                        lock (DetectionListObject)
+                        {
+                            if (detectionList.Count() > 0)
+                            {
+                                detectionArray = detectionList.ToArray();
+                                detectionList.Clear();
+                                detectObjectIndex = 0;
+                                threadStepStayCnt = 0;
+                                bStep = 0;
+                                threadStep++;
+                            }
+                        }
+                        break;
+
+                    case 1:
+                        if (detectObjectIndex < detectionArray.Length)
+                        {
+
+                        }
+                        threadStep++;
+                        break;
+
+                    case 2:
+                        threadStep++;
+                        break;
+
+                    case 3:
+                        threadStep = 100; bStep = 4;
+                        break;
+
+                    case 4:
+                        break;
+
+                    case 5:
+                        break;
+                    //////////////////////////////////////////////////////////////////////////////////////////
+                    case 10:
+                        break;
+                    case 11:
+                        threadStep++;
+                        break;
+
+                    case 12:
+                        threadStep++;
+                        break;
+
+                    case 13:
+                        sendLoraData(bs, 0, bs.Length, (byte)(detectObjectIndex < 6 ? 0x41 : 0x42));
+                        threadStep = 100; bStep = 14;
+                        break;
+
+                    case 14:
+                        break;
+
+                    case 15:
+                        break;
+                    //////////////////////////////////////////////////////////////////////////////////////////
+                    case 100: //데이터 전송 후 대기 약 8초
+                        threadStepStayCnt++;
+                        if (threadStepStayCnt > 8)
+                        {
+                            threadStep = bStep;
+                            threadStepStayCnt = 0;
+                        }
+                        break;
+                }
+                Thread.Sleep(1000);
+            }
+        }
+
+        private void sendLoraData(byte[] convertHex, int offset, int len, byte type)
+        {
+            byte[] stx = new byte[1] { 0x02 };
+            byte[] frameLen = new byte[1];
+            frameLen[0] = (byte)(len + 2);
+            byte[] typeCode = new byte[1] { type };
+            byte[] bodyLen = new byte[1];
+            bodyLen[0] = (byte)len;
+
+            byte[] temp4Crc = frameLen.Concat(typeCode).Concat(bodyLen).Concat(convertHex).ToArray();
+
+            ushort uscrc = GetCRC(temp4Crc, 0, temp4Crc.Length);
+            byte[] crc = BitConverter.GetBytes(uscrc);
+            Array.Reverse(crc);
+            byte[] dataFrame = stx.Concat(temp4Crc).Concat(crc).ToArray();
+
+            byte[] atcmd = stringToByte("at+bdat=");
+            byte[] totalLen = new byte[1];
+            totalLen[0] = (byte)dataFrame.Length;
+            byte[] finalFrame = atcmd.Concat(totalLen).Concat(dataFrame).ToArray();
+            StringBuilder sb = new StringBuilder();
+            foreach (byte b in finalFrame)
+            {
+                sb.Append(string.Format("{0:X2} ", b));
+            }
+            if (LoRaSerialPort.IsOpen)
+            {
+                LoRaSerialPort.Write(finalFrame, 0, finalFrame.Length);
+                lastLoRaTxRxTime = DateTime.Now;
+            }
+            Logger.Logger.WriteLog(out message, Logger.LogType.Info, "-> LoRa: " + Encoding.Default.GetString(finalFrame), true);
+            AddLogMessage(message);
+            Logger.Logger.WriteLog(out message, Logger.LogType.Info, "-> LoRa: EDGE DATA [" + hexByteToAscii(dataFrame) + "]", true);
+            AddLogMessage(message);
+        }
+
+        private string hexByteToAscii(byte[] bs)
+        {
+            List<byte> list = new List<byte>();
+            byte[] bb;
+            foreach (byte b in bs)
+            {
+                bb = Encoding.ASCII.GetBytes(b.ToString("X2"));
+                foreach (byte bb1 in bb)
+                {
+                    list.Add(bb1);
+                }
+            }
+            return Encoding.Default.GetString(list.ToArray());
+        }
+
+        private byte[] stringToByte(string str)
+        {
+            byte[] StrByte = Encoding.UTF8.GetBytes(str);
+            return StrByte;
+        }
+
+        private byte[] dateTimeToByteArray(DateTime dateTime)
+        {
+            //byte[] b = new byte[1];
+            //b[0] = (byte)(dateTime.Millisecond / 10);
+            long bNow = ((DateTimeOffset)dateTime).ToUnixTimeSeconds(); //get Timestamp
+            byte[] arrayNow = BitConverter.GetBytes((int)bNow);
+            Array.Reverse(arrayNow);
+            //return arrayNow.Concat(b).ToArray();
+            return arrayNow;
+        }
+
+        StringBuilder LoRa_sb = new StringBuilder();
+        private void loraDataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            //extDevMgmt app msg received.(len = 27)
+            //02 17 53 15 01 7f c3 03 1c 80 3c f6 40 80 3c f6 a4 80 3c f7 08 80 3c f7 6c 6b 4b        
+            //Ack
+
+            if (LoRaSerialPort.IsOpen)
+            {
+                DateTime dateTimeNow = DateTime.Now;
+                string receivedData = LoRaSerialPort.ReadExisting();
+                lastLoRaTxRxTime = DateTime.Now;
+                string tmp = "";
+                if (rbLoRaReceiveASCII)
+                {
+                    try
+                    {
+                        string[] splitReceiveData = receivedData.Replace("\r\n", "\n").Split(new char[] { '\n' });
+                        for (int i = 0; i < splitReceiveData.Length; ++i)
+                        {
+                            tmp = splitReceiveData[i].Trim();
+                            Logger.Logger.WriteLog(out message, Logger.LogType.Info, string.Format("<- LoRa: RxNO-{0} [" + tmp + "]", i), true);
+                            if (tmp.Length > 0) LoRa_sb.Append(tmp);
+                        }
+                        tmp = LoRa_sb.ToString();
+                        //Console.WriteLine("StringBuilder: " + tmp);
+                        if (tmp.ToUpper().Contains("LEN") && tmp.ToUpper().Contains("02") && tmp.ToUpper().Contains("ACK"))
+                        {
+
+                            tmp = takeRealRecvFrame(tmp);
+                            if (tmp.Length == 0)
+                            {
+                                LoRa_sb.Clear(); return;
+                            }
+                            //Console.WriteLine("message LoRa: " + tmp);
+                            byte[] bs = StringToByteArray(tmp);
+
+                            ParsingLoRaMessage(bs);
+                            //foreach (byte b in bs)
+                            //{
+                            //    sb.Append(string.Format("{0:X2} ", b));
+                            //}
+                            //Logger.Logger.WriteLog(Logger.LogType.Info, "   LoRa: DATA Bytes [" + sb.ToString().Trim() + "]", true);
+                        }
+                        LoRa_sb.Clear();
+                    }
+                    catch (System.Exception ex)
+                    {
+                        LoRa_sb.Clear();
+                        Console.WriteLine(ex.ToString());
+                        Logger.Logger.WriteLog(out message, Logger.LogType.Error, "loraDataReceived: " + ex.ToString(), true);
+                        return;
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        char[] values = receivedData.ToCharArray();
+                        foreach (char letter in values)
+                        {
+                            int value = Convert.ToInt32(letter);
+                            string hexOutput = String.Format("{0:X2}", value);
+                            sbLoRaReceiveData.Append(hexOutput + " ");
+                        }
+                        Logger.Logger.WriteLog(out message, Logger.LogType.Info, "<- LoRa: " + string.Concat(values), true);
+                        sbLoRaReceiveData.Clear();
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Console.WriteLine(ex.Message);
+                    }
+                }
+            }
+        }
+
+        private string takeRealRecvFrame(string recv)
+        {
+            string s = recv.ToUpper();
+            //Console.WriteLine(s.Length);
+            int index02 = s.LastIndexOf("02");
+            int indexAck = s.LastIndexOf("ACK");
+            //Console.WriteLine("02 index: {0}", index02);
+
+            string s1 = s.Substring(s.LastIndexOf("LEN"), s.LastIndexOf(")") - s.LastIndexOf("LEN"));
+            //Console.WriteLine("s1: {0}", s1);
+            string s2 = s1.Substring(s1.IndexOf("=") + 1);
+            //Console.WriteLine("s2: {0}", s2);
+            int len = int.Parse(s2.Trim());
+            //Console.WriteLine("Length: {0}", len);
+
+            int l = indexAck - (index02 + (len * 2 + len - 1));
+            //Console.WriteLine("L: {0}", l);
+
+            if (l == 0)
+            {
+                return s.Substring(index02, (len * 2 + len - 1)).Replace(" ", "");
+            }
+            return "";
+        }
+        private byte[] StringToByteArray(string hex)
+        {
+            return Enumerable.Range(0, hex.Length)
+                                .Where(x => x % 2 == 0)
+                                .Select(x => Convert.ToByte(hex.Substring(x, 2), 16))
+                                .ToArray();
+        }
+        private void ParsingLoRaMessage(byte[] bs)
+        {
+            ushort uscrc = GetCRC(bs, 1, bs.Length - 3);
+            byte[] crc = BitConverter.GetBytes(uscrc);
+            Array.Reverse(crc);
+            Console.WriteLine();
+            if (bs[bs.Length - 2] != crc[0] || bs[bs.Length - 1] != crc[1])
+            {
+                Logger.Logger.WriteLog(out message, Logger.LogType.Info,
+                    string.Format("CRC Error, Msg: {0:X2}{1:X2} Calc: {2:X2}{3:X2}", bs[bs.Length - 2], bs[bs.Length - 1], crc[0], crc[1]),
+                    true);
+                return;
+            }
+        }
+
+        #region POLYNOMIAL
+        private ushort[] TABLE_POLYNOMIAL = new ushort[256] {
+            0x0000 ,0x1021 ,0x2042 ,0x3063 ,0x4084 ,0x50A5 ,0x60C6 ,0x70E7   //000 ~ 007
+	        ,0x8108 ,0x9129 ,0xA14A ,0xB16B ,0xC18C ,0xD1AD ,0xE1CE ,0xF1EF   //008 ~ 015
+	        ,0x1231 ,0x0210 ,0x3273 ,0x2252 ,0x52B5 ,0x4294 ,0x72F7 ,0x62D6   //016 ~ 023
+	        ,0x9339 ,0x8318 ,0xB37B ,0xA35A ,0xD3BD ,0xC39C ,0xF3FF ,0xE3DE   //024 ~ 031
+	        ,0x2462 ,0x3443 ,0x0420 ,0x1401 ,0x64E6 ,0x74C7 ,0x44A4 ,0x5485   //032 ~ 039
+	        ,0xA56A ,0xB54B ,0x8528 ,0x9509 ,0xE5EE ,0xF5CF ,0xC5AC ,0xD58D   //040 ~ 047
+	        ,0x3653 ,0x2672 ,0x1611 ,0x0630 ,0x76D7 ,0x66F6 ,0x5695 ,0x46B4   //048 ~ 055
+	        ,0xB75B ,0xA77A ,0x9719 ,0x8738 ,0xF7DF ,0xE7FE ,0xD79D ,0xC7BC   //056 ~ 063
+	        ,0x48C4 ,0x58E5 ,0x6886 ,0x78A7 ,0x0840 ,0x1861 ,0x2802 ,0x3823   //064 ~ 071
+	        ,0xC9CC ,0xD9ED ,0xE98E ,0xF9AF ,0x8948 ,0x9969 ,0xA90A ,0xB92B   //072 ~ 079
+	        ,0x5AF5 ,0x4AD4 ,0x7AB7 ,0x6A96 ,0x1A71 ,0x0A50 ,0x3A33 ,0x2A12   //080 ~ 087
+	        ,0xDBFD ,0xCBDC ,0xFBBF ,0xEB9E ,0x9B79 ,0x8B58 ,0xBB3B ,0xAB1A   //088 ~ 095
+	        ,0x6CA6 ,0x7C87 ,0x4CE4 ,0x5CC5 ,0x2C22 ,0x3C03 ,0x0C60 ,0x1C41   //096 ~ 103
+	        ,0xEDAE ,0xFD8F ,0xCDEC ,0xDDCD ,0xAD2A ,0xBD0B ,0x8D68 ,0x9D49   //104 ~ 111
+	        ,0x7E97 ,0x6EB6 ,0x5ED5 ,0x4EF4 ,0x3E13 ,0x2E32 ,0x1E51 ,0x0E70   //112 ~ 119
+	        ,0xFF9F ,0xEFBE ,0xDFDD ,0xCFFC ,0xBF1B ,0xAF3A ,0x9F59 ,0x8F78   //120 ~ 127
+	        ,0x9188 ,0x81A9 ,0xB1CA ,0xA1EB ,0xD10C ,0xC12D ,0xF14E ,0xE16F   //128 ~ 135
+	        ,0x1080 ,0x00A1 ,0x30C2 ,0x20E3 ,0x5004 ,0x4025 ,0x7046 ,0x6067   //136 ~ 143
+	        ,0x83B9 ,0x9398 ,0xA3FB ,0xB3DA ,0xC33D ,0xD31C ,0xE37F ,0xF35E   //144 ~ 151
+	        ,0x02B1 ,0x1290 ,0x22F3 ,0x32D2 ,0x4235 ,0x5214 ,0x6277 ,0x7256   //152 ~ 159
+	        ,0xB5EA ,0xA5CB ,0x95A8 ,0x8589 ,0xF56E ,0xE54F ,0xD52C ,0xC50D   //160 ~ 167
+	        ,0x34E2 ,0x24C3 ,0x14A0 ,0x0481 ,0x7466 ,0x6447 ,0x5424 ,0x4405   //168 ~ 175
+	        ,0xA7DB ,0xB7FA ,0x8799 ,0x97B8 ,0xE75F ,0xF77E ,0xC71D ,0xD73C   //176 ~ 183
+	        ,0x26D3 ,0x36F2 ,0x0691 ,0x16B0 ,0x6657 ,0x7676 ,0x4615 ,0x5634   //184 ~ 191
+	        ,0xD94C ,0xC96D ,0xF90E ,0xE92F ,0x99C8 ,0x89E9 ,0xB98A ,0xA9AB   //192 ~ 199
+	        ,0x5844 ,0x4865 ,0x7806 ,0x6827 ,0x18C0 ,0x08E1 ,0x3882 ,0x28A3   //200 ~ 207
+	        ,0xCB7D ,0xDB5C ,0xEB3F ,0xFB1E ,0x8BF9 ,0x9BD8 ,0xABBB ,0xBB9A   //208 ~ 215
+	        ,0x4A75 ,0x5A54 ,0x6A37 ,0x7A16 ,0x0AF1 ,0x1AD0 ,0x2AB3 ,0x3A92   //216 ~ 223
+	        ,0xFD2E ,0xED0F ,0xDD6C ,0xCD4D ,0xBDAA ,0xAD8B ,0x9DE8 ,0x8DC9   //224 ~ 231
+	        ,0x7C26 ,0x6C07 ,0x5C64 ,0x4C45 ,0x3CA2 ,0x2C83 ,0x1CE0 ,0x0CC1   //232 ~ 239
+	        ,0xEF1F ,0xFF3E ,0xCF5D ,0xDF7C ,0xAF9B ,0xBFBA ,0x8FD9 ,0x9FF8   //240 ~ 247
+	        ,0x6E17 ,0x7E36 ,0x4E55 ,0x5E74 ,0x2E93 ,0x3EB2 ,0x0ED1 ,0x1EF0
+        };
+
+        public ushort GetCRC(byte[] _buffer, int _start_idx, int _length)
+        {
+            ushort crc = 0x0000;
+            int ii;
+            for (ii = _start_idx; ii < _start_idx + _length; ++ii)
+                crc = (ushort)(TABLE_POLYNOMIAL[((crc >> 8) ^ _buffer[ii]) & 0xFF] ^ (crc << 8));
+            return crc;
+        }
+        #endregion
+
+
         private void MainForm_Load(object sender, EventArgs e)
         {
             RemoteObject.CreateServer();
             remoteObject = new RemoteObject();
             pbResult.Update();
+
+            threadDoWork = new Thread(new ThreadStart(ThreadDoWork));
+            bThreadDoWorkRun = true;
+            Logger.Logger.WriteLog(out message, Logger.LogType.Info, "============== Start LoRa thread ================", true);
+            threadDoWork.Start();
+
         }
 
         private void makeFolders(string path)
@@ -836,8 +1381,13 @@ namespace RealtimeFireDetection
 
         private void UpdateRemoteMessage(string msg)
         {
-            remoteObject.Str = msg;
-            remoteObject.Count++;
+            if (!remoteObject.Str.Equals(msg))
+            {
+                remoteObject.Str = msg;
+                remoteObject.Count++;
+            }
+            Logger.Logger.WriteLog(out message, LogType.Info, msg, true);
+            AddLogMessage(message);
         }
 
         public void AddLogMessage(LogMessage message)
