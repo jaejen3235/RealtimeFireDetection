@@ -24,11 +24,17 @@ namespace RealtimeFireDetection
     {
         string APP_NAME = "FireDetector";
         string VER = "1.0.0";
+
+        public readonly static byte ALARM_TYPE_NORMAL = 0;
+        public readonly static byte ALARM_TYPE_WARN = 1;
+        public readonly static byte ALARM_TYPE_OCCUR = 2;
+
         //public static string LocalName = "";
         public static SerialPort LoRaSerialPort; // = new SerialPort();
         private StringBuilder sbLoRaReceiveData; // = new StringBuilder();
         private DateTime lastLoRaTxRxTime;
 
+        private bool LoRaSendStart = false;
         private string comport;
         private string baudRate = "115200";
         private bool rbLoRaReceiveASCII = true;
@@ -257,6 +263,7 @@ namespace RealtimeFireDetection
                         AddLogMessage(message);
                         saveCnt++;
                         save = true;
+                        detectorState = DetectorState.DETECT_FLAME;
                     });
 
                     if (save)
@@ -273,6 +280,7 @@ namespace RealtimeFireDetection
                         AddLogMessage(message);
                         saveCnt++;
                         save = true;
+                        detectorState = DetectorState.MONITORING_FIRE;
                     });
 
                     if (save)
@@ -287,7 +295,7 @@ namespace RealtimeFireDetection
             if (saveCnt > 0)
             {
                 //화재정보 전달 -> LoRa 모듈
-                UpdateRemoteMessage("FIRE:" + sbFlameInfos.Remove(sbFlameInfos.Length - 1, 1).ToString());
+                //UpdateRemoteMessage("FIRE:" + sbFlameInfos.Remove(sbFlameInfos.Length - 1, 1).ToString());
 
                 writer = File.CreateText(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_result" + ".txt");
                 Font fnt = new Font("Arial", 8, FontStyle.Regular);
@@ -328,20 +336,28 @@ namespace RealtimeFireDetection
                 }
                 writer.Close();
                 bmp.Save(targetFirePath + "/" + strNow + "_" + APP_NAME + "_" + level + "_snapshot.bmp", ImageFormat.Bmp);
+                LoRaSendStart = true; //Start LoRa
             }
             return bmp;
         }
 
         private void resetState()
         {
-            pbResult.Image = null;
-            pbResult.Invalidate();
-            detectorState = DetectorState.NO_FIRE;
-            Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "Change state to NO_FIRE"), true);
-            AddLogMessage(message);
             FlameList.Clear();
+            if (detectorState != DetectorState.NO_FIRE)//정상 상태 1회 전송
+            {
+                LoRaSendStart = true;
+                Logger.Logger.WriteLog(out message, LogType.Info, string.Format("[YOLO] {0} ", "Change state to NO_FIRE"), true);
+                AddLogMessage(message);
+            }
+            detectorState = DetectorState.NO_FIRE;
+            pbResult.Invoke((MethodInvoker)delegate () {
+                pbResult.Image = null;
+                pbResult.Invalidate();
+            });
+            //20240115 LoRa 모듈 통합, IPC 통신 사용 안함
             //화재정보 전달 -> LoRa 모듈
-            UpdateRemoteMessage("NO_FIRE");
+            //UpdateRemoteMessage("NO_FIRE");
         }
 
         private List<Prediction> DoYoLo(Mat image)
@@ -469,8 +485,12 @@ namespace RealtimeFireDetection
 
                         Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
                         bmp = new Bitmap(bmp, resize);
-                        pbScreen.Image = bmp;
-                        
+
+                        pbScreen.Invoke((MethodInvoker)delegate ()
+                        {
+                            pbScreen.Image = bmp;
+                        });
+
                         if (stopwatch.ElapsedMilliseconds > 1000 * fireCheckDuration)
                         {
                             stopwatch.Stop();
@@ -479,22 +499,18 @@ namespace RealtimeFireDetection
                                 using(Mat yoloImage = matImage.Clone())
                                 {
                                     var result = DoYoLo(yoloImage);
-                                    //if (result != null) {
-                                    //    int c = 0;
-                                    //    foreach (Prediction p in result)
-                                    //    {
-                                    //        Console.WriteLine("Prediction {0}: {1}", c++, p.ToString());
-                                    //    }
-                                    //}
                                     
                                     //if (result.Count > 0 && checkROIin(result))
                                     if (result != null && result.Count > 0)
                                     {
                                         Bitmap bmpResult = saveFlameInfo(yoloImage, result);
                                         bmp = new Bitmap(bmpResult, resize);
-                                        pbResult.Image = bmp;
-                                        detectorState = DetectorState.DETECT_FLAME;
-                                        pbResult.Update();
+
+                                        pbResult.Invoke((MethodInvoker)delegate ()
+                                        {
+                                            pbResult.Image = bmp;
+                                            pbResult.Update();
+                                        });
                                         noFireWatch.Reset();
                                         if (!noFireWatch.IsRunning) noFireWatch.Start();
                                     }
@@ -552,12 +568,17 @@ namespace RealtimeFireDetection
             public DetectorState state = DetectorState.NO_FIRE;
             public string ID { get; set; }
             public List<FlameInfo> FlameInfoList = new List<FlameInfo>();
+
+            public DateTime DtFlame { get; set; }
+            public DateTime DtFire { get; set; }
             
             public Flame(MainForm mf, string id)
             {
                 this.mf = mf;
                 this.ID = id;
                 state = DetectorState.NO_FIRE;
+                DtFlame = DateTime.Now;
+                DtFire = DateTime.Now;
             }
 
             public void AddFirstFlameInfo(FlameInfo info)
@@ -648,6 +669,23 @@ namespace RealtimeFireDetection
                 }
                 return FlameInfoList[index].GetRegionInfo();
             }
+            public FlameInfo getMaxConfidenceInfoData()
+            {
+                int index = 0;
+                double con = -0.1;
+                FlameInfo info;
+
+                for (int i = 0; i < FlameInfoList.Count; i++)
+                {
+                    info = FlameInfoList[i];
+                    if (info.Confidence > con)
+                    {
+                        con = info.Confidence;
+                        index = i;
+                    }
+                }
+                return FlameInfoList[index];
+            }
 
             public string IsItFlame(Action action)
             {
@@ -658,6 +696,7 @@ namespace RealtimeFireDetection
 
                     if(mf.thresholdWarnRate <= avg_confidence)
                     {
+                        DtFlame = DateTime.Now;
                         LogMessage msg;
                         Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("Flame check threshold warn {0:0.00}, avg {1:0.00}", mf.thresholdWarnRate, avg_confidence), false);
                         mf.AddLogMessage(msg);
@@ -703,8 +742,9 @@ namespace RealtimeFireDetection
                     double avg_confidence = FlameInfoList.Average(info => info.Confidence);
                     if (mf.thresholdOccurRate <= avg_confidence)
                     {
+                        DtFire = DateTime.Now;
                         LogMessage msg;
-                        Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("Fire check threshold occur {0:0.00}, avg {1:0.00}", mf.thresholdWarnRate, avg_confidence), false);
+                        Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("Fire check threshold occur {0:0.00}, avg {1:0.00}", mf.thresholdOccurRate, avg_confidence), false);
                         mf.AddLogMessage(msg);
                         isAll = true;
                     }
@@ -1005,6 +1045,7 @@ namespace RealtimeFireDetection
 
         class DetectionObject
         {
+            public byte AlarmType { get; set; }
             public byte LocX
             {
                 set; get;
@@ -1026,111 +1067,147 @@ namespace RealtimeFireDetection
                 set; get;
             }
 
-            DetectionObject()
+            public DetectionObject()
             {
+                AlarmType = 0x00;
                 LocX = 0x00;
                 LocY = 0x00;
                 Width = 0x00;
                 Height = 0x00;
                 Confidence = 0x00;
             }
+
+            public byte[] getBytes()
+            {
+                byte[] bs = new byte[6];
+                bs[0] = AlarmType;
+                bs[1] = LocX;
+                bs[2] = LocY;
+                bs[3] = Width;
+                bs[4] = Height;
+                bs[5] = Confidence;
+                return bs;
+            }
         }
 
-        private DetectionObject[] MakeLoRaData()
+        private byte[] MakeDataFrame4LoRa()
         {
-            DetectionObject[] dtos = new DetectionObject[6];
-            int flameCount = 0;
-            foreach(Flame flame in FlameList)
+            int countFlames = 0;
+            byte[] sendTime;
+            byte[] acqTime;
+
+            sendTime = dateTimeToByteArray(DateTime.Now);
+            Flame flame;
+            List<byte> lbs = new List<byte>();
+            lbs.AddRange(sendTime);
+            for(int i = 0; i < 6; i++)
             {
-                if(flame.state == DetectorState.DETECT_FLAME)
+                if (i < FlameList.Count())
                 {
-
+                    flame = FlameList[i];
+                    if (flame.state == DetectorState.DETECT_FLAME)
+                    {
+                        if (countFlames == 0)
+                        {
+                            acqTime = dateTimeToByteArray(flame.DtFlame);
+                            lbs.AddRange(acqTime);
+                        }
+                        FlameInfo info = flame.getMaxConfidenceInfoData();
+                        lbs.Add(ALARM_TYPE_WARN);
+                        lbs.Add((byte)(info.Area.X / 4));
+                        lbs.Add((byte)(info.Area.Y / 4));
+                        lbs.Add((byte)(info.Area.Width / 4));
+                        lbs.Add((byte)(info.Area.Height / 4));
+                        lbs.Add((byte)(info.Confidence * 100));
+                    }
+                    else if (flame.state == DetectorState.MONITORING_FIRE)
+                    {
+                        if (countFlames == 0)
+                        {
+                            acqTime = dateTimeToByteArray(flame.DtFire);
+                            lbs.AddRange(acqTime);
+                        }
+                        FlameInfo info = flame.getMaxConfidenceInfoData();
+                        lbs.Add(ALARM_TYPE_OCCUR);
+                        lbs.Add((byte)(info.Area.X / 4));
+                        lbs.Add((byte)(info.Area.Y / 4));
+                        lbs.Add((byte)(info.Area.Width / 4));
+                        lbs.Add((byte)(info.Area.Height / 4));
+                        lbs.Add((byte)(info.Confidence * 100));
+                    }
+                    else
+                    {
+                        if(countFlames == 0)
+                        {
+                            acqTime = sendTime;
+                            lbs.AddRange(acqTime);
+                        }
+                        lbs.Add(ALARM_TYPE_NORMAL);
+                        lbs.Add(0);
+                        lbs.Add(0);
+                        lbs.Add(0);
+                        lbs.Add(0);
+                        lbs.Add(0);
+                    }
                 }
+                else
+                {
+                    if (countFlames == 0)
+                    {
+                        acqTime = sendTime;
+                        lbs.AddRange(acqTime);
+                    }
+                    lbs.Add(ALARM_TYPE_NORMAL);
+                    lbs.Add(0);
+                    lbs.Add(0);
+                    lbs.Add(0);
+                    lbs.Add(0);
+                    lbs.Add(0);
+                }
+                countFlames++;
+                if (countFlames >= 6) break;
             }
-
+            return lbs.ToArray();
         }
 
         private void ThreadDoWork()
         {
             int threadStep = 0;
-            int bStep = 0;
-            //Thread t2 = new Thread(new ParameterizedThreadStart(Calc));
-            //t2.Start(10.00);
             byte[] bs = null;
-            int detectObjectIndex = 0;
             int threadStepStayCnt = 0;
-            DetectionObject[] detectionArray = null;
-            while (bThreadDoWorkRun)
+            bool work = true;
+            while (work)
             {
                 //Console.WriteLine("ThreadDoWork step: {0}", threadStep);
                 switch (threadStep)
                 {
                     default:
-                        threadStep = 0;
                         break;
                     case 0:
-                        lock (DetectionListObject)
+                        if (LoRaSendStart)
                         {
-                            if (detectionList.Count() > 0)
-                            {
-                                detectionArray = detectionList.ToArray();
-                                detectionList.Clear();
-                                detectObjectIndex = 0;
-                                threadStepStayCnt = 0;
-                                bStep = 0;
-                                threadStep++;
-                            }
+                            LoRaSendStart = false;
+                            threadStep++;
                         }
                         break;
-
                     case 1:
-                        if (detectObjectIndex < detectionArray.Length)
+                        bs = MakeDataFrame4LoRa();
+                        if (bs == null || bs.Length == 0)
                         {
-
+                            threadStep = 0;
                         }
-                        threadStep++;
+                        else threadStep++;
                         break;
-
                     case 2:
-                        threadStep++;
-                        break;
-
-                    case 3:
-                        threadStep = 100; bStep = 4;
-                        break;
-
-                    case 4:
-                        break;
-
-                    case 5:
-                        break;
-                    //////////////////////////////////////////////////////////////////////////////////////////
-                    case 10:
-                        break;
-                    case 11:
-                        threadStep++;
-                        break;
-
-                    case 12:
-                        threadStep++;
-                        break;
-
-                    case 13:
-                        sendLoraData(bs, 0, bs.Length, (byte)(detectObjectIndex < 6 ? 0x41 : 0x42));
-                        threadStep = 100; bStep = 14;
-                        break;
-
-                    case 14:
-                        break;
-
-                    case 15:
+                        sendLoraData(bs, 0, bs.Length, 0x61);
+                        threadStep = 100;
                         break;
                     //////////////////////////////////////////////////////////////////////////////////////////
                     case 100: //데이터 전송 후 대기 약 8초
                         threadStepStayCnt++;
                         if (threadStepStayCnt > 8)
                         {
-                            threadStep = bStep;
+                            threadStep = 0;
                             threadStepStayCnt = 0;
                         }
                         break;
@@ -1171,7 +1248,7 @@ namespace RealtimeFireDetection
             }
             Logger.Logger.WriteLog(out message, Logger.LogType.Info, "-> LoRa: " + Encoding.Default.GetString(finalFrame), true);
             AddLogMessage(message);
-            Logger.Logger.WriteLog(out message, Logger.LogType.Info, "-> LoRa: EDGE DATA [" + hexByteToAscii(dataFrame) + "]", true);
+            Logger.Logger.WriteLog(out message, Logger.LogType.Info, "-> LoRa: [" + hexByteToAscii(dataFrame) + "]", true);
             AddLogMessage(message);
         }
 
@@ -1220,6 +1297,7 @@ namespace RealtimeFireDetection
                 string receivedData = LoRaSerialPort.ReadExisting();
                 lastLoRaTxRxTime = DateTime.Now;
                 string tmp = "";
+                StringBuilder sb = new StringBuilder();
                 if (rbLoRaReceiveASCII)
                 {
                     try
@@ -1232,7 +1310,6 @@ namespace RealtimeFireDetection
                             if (tmp.Length > 0) LoRa_sb.Append(tmp);
                         }
                         tmp = LoRa_sb.ToString();
-                        //Console.WriteLine("StringBuilder: " + tmp);
                         if (tmp.ToUpper().Contains("LEN") && tmp.ToUpper().Contains("02") && tmp.ToUpper().Contains("ACK"))
                         {
 
@@ -1241,15 +1318,14 @@ namespace RealtimeFireDetection
                             {
                                 LoRa_sb.Clear(); return;
                             }
-                            //Console.WriteLine("message LoRa: " + tmp);
                             byte[] bs = StringToByteArray(tmp);
 
                             ParsingLoRaMessage(bs);
-                            //foreach (byte b in bs)
-                            //{
-                            //    sb.Append(string.Format("{0:X2} ", b));
-                            //}
-                            //Logger.Logger.WriteLog(Logger.LogType.Info, "   LoRa: DATA Bytes [" + sb.ToString().Trim() + "]", true);
+                            foreach (byte b in bs)
+                            {
+                                sb.Append(string.Format("{0:X2} ", b));
+                            }
+                            Logger.Logger.WriteLog(out message, Logger.LogType.Info, "   LoRa: DATA Bytes [" + sb.ToString().Trim() + "]", true);
                         }
                         LoRa_sb.Clear();
                     }
@@ -1307,6 +1383,7 @@ namespace RealtimeFireDetection
             }
             return "";
         }
+
         private byte[] StringToByteArray(string hex)
         {
             return Enumerable.Range(0, hex.Length)
