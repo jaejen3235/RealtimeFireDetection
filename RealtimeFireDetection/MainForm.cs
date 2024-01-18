@@ -1199,7 +1199,7 @@ namespace RealtimeFireDetection
                         else threadStep++;
                         break;
                     case 2:
-                        sendLoraData(bs, 0, bs.Length, 0x61);
+                        sendLoraData(bs, 0, bs.Length, 0x60);
                         threadStep = 100;
                         break;
                     //////////////////////////////////////////////////////////////////////////////////////////
