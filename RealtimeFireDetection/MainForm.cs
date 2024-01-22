@@ -35,6 +35,7 @@ namespace RealtimeFireDetection
         private DateTime lastLoRaTxRxTime;
 
         private bool LoRaSendStart = false;
+        private List<byte[]> listOfResponse = new List<byte[]>();
         private string comport;
         private string baudRate = "115200";
         private bool rbLoRaReceiveASCII = true;
@@ -610,8 +611,10 @@ namespace RealtimeFireDetection
             {
                 double average;
                 double sumOfDeviation = 0;
-                var ret = FlameInfoList.Select(s => s.DiagonalLength);
-                average = ret.Average();
+
+                //var ret = FlameInfoList.Select(s => s.DiagonalLength);
+                //average = ret.Average();
+                average = FlameInfoList.Average(info => info.DiagonalLength);
 
                 //편차의 제곱 (편차가 큰 경우 실제 화재로 인식하기 위해..)
                 foreach (FlameInfo info in FlameInfoList)
@@ -1173,6 +1176,7 @@ namespace RealtimeFireDetection
         private void ThreadDoWork()
         {
             int threadStep = 0;
+            int bStep = 0;
             byte[] bs = null;
             int threadStepStayCnt = 0;
             bool work = true;
@@ -1191,23 +1195,51 @@ namespace RealtimeFireDetection
                         }
                         break;
                     case 1:
-                        bs = MakeDataFrame4LoRa();
-                        if (bs == null || bs.Length == 0)
+                        if(listOfResponse.Count > 0)
                         {
-                            threadStep = 0;
+                            threadStep = 10;
                         }
-                        else threadStep++;
+                        else
+                        {
+                            bs = MakeDataFrame4LoRa();
+                            if (bs == null || bs.Length == 0)
+                            {
+                                threadStep = 0;
+                            }
+                            else threadStep++;
+                        }
                         break;
+
                     case 2:
                         sendLoraData(bs, 0, bs.Length, 0x60);
                         threadStep = 100;
+                        bStep = 0;
+                        break;
+                    //////////////////////////////////////////////////////////////////////////////////////////
+                    case 10:
+                        if(listOfResponse.Count > 0)
+                        {
+                            bs = listOfResponse[0];
+                            listOfResponse.RemoveAt(0);
+                            listOfResponse.TrimExcess();
+                            threadStep++;
+                        }
+                        else
+                        {
+                            threadStep = 0;
+                        }
+                        break;
+                    case 11:
+                        sendLoraData(bs, 0, bs.Length, 0x72);
+                        threadStep = 100;
+                        bStep = 10;
                         break;
                     //////////////////////////////////////////////////////////////////////////////////////////
                     case 100: //데이터 전송 후 대기 약 8초
                         threadStepStayCnt++;
                         if (threadStepStayCnt > 8)
                         {
-                            threadStep = 0;
+                            threadStep = bStep;
                             threadStepStayCnt = 0;
                         }
                         break;
@@ -1403,6 +1435,70 @@ namespace RealtimeFireDetection
                     string.Format("CRC Error, Msg: {0:X2}{1:X2} Calc: {2:X2}{3:X2}", bs[bs.Length - 2], bs[bs.Length - 1], crc[0], crc[1]),
                     true);
                 return;
+            }
+            //00. 02 : STX
+            //01. 09 : Len
+            //02. 71 : CMD Code
+            //03. 07 : Len
+            //04. 01 : controlType
+            //05. 02 : checkInterval
+            //06. 46 : thresholdWarn
+            //07. 05 : warnFrameCount
+            //08. 55 : thresholdOccur
+            //09. 05 : occurFrameCount
+            //10. 0A : diagonalMinChange
+            //11. 1A : CRC 0
+            //12. E6 : CRC 1
+            try
+            {
+                if (bs[4] == 0x01)   //0x00 보고, 0x01 등록
+                {
+                    ini = new IniFile("./config.ini");
+                    string tmp;
+                    string msg = "Control confing.ini ";
+
+                    tmp = Convert.ToString(bs[5]);
+                    ini.Write("DURATION_FIRE_CHECK", tmp, "MAIN");
+                    msg = msg + tmp + ", ";
+
+                    tmp = Convert.ToString(bs[6]);
+                    ini.Write("WARN_THRESHOLD(%)", tmp, "MAIN");
+                    msg = msg + tmp + ", ";
+
+                    tmp = Convert.ToString(bs[7]);
+                    ini.Write("FRAME_COUNT_WARN", tmp, "MAIN");
+                    msg = msg + tmp + ", ";
+
+                    tmp = Convert.ToString(bs[8]);
+                    ini.Write("OCCUR_THRESHOLD(%)", tmp, "MAIN");
+                    msg = msg + tmp + ", ";
+
+                    tmp = Convert.ToString(bs[9]);
+                    ini.Write("FRAME_COUNT_OCCUR", tmp, "MAIN");
+                    msg = msg + tmp + ", ";
+
+                    tmp = Convert.ToString(bs[10]);
+                    ini.Write("STANDARD_DEVIATION_LOW_LIMIT", tmp, "MAIN");
+                    msg = msg + tmp;
+
+                    Logger.Logger.WriteLog(out message, LogType.Info, msg, true);
+                    AddLogMessage(message);
+
+                    //화재감시 설정 응답 (0x72)
+                    byte[] sendTime;
+                    sendTime = dateTimeToByteArray(DateTime.Now);
+                    List<byte> lbs = new List<byte>();
+                    lbs.AddRange(sendTime);
+                    lbs.Add(0x00);  //보고
+                    lbs.Add(bs[5]); lbs.Add(bs[6]); lbs.Add(bs[7]); lbs.Add(bs[8]); lbs.Add(bs[9]); lbs.Add(bs[10]);
+                    listOfResponse.Add(lbs.ToArray());
+                    LoRaSendStart = true;
+                }
+
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
             }
         }
 
