@@ -33,6 +33,7 @@ namespace RealtimeFireDetection
             this.groupBox6 = new System.Windows.Forms.GroupBox();
             this.tbText = new System.Windows.Forms.TextBox();
             this.groupBox5 = new System.Windows.Forms.GroupBox();
+            this.btRoiConfig = new System.Windows.Forms.Button();
             this.cbVitualFlame = new System.Windows.Forms.CheckBox();
             this.button1 = new System.Windows.Forms.Button();
             this.groupBox4 = new System.Windows.Forms.GroupBox();
@@ -41,7 +42,7 @@ namespace RealtimeFireDetection
             this.pbScreen = new System.Windows.Forms.PictureBox();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
             this.lbLog = new System.Windows.Forms.ListBox();
-            this.btRoiConfig = new System.Windows.Forms.Button();
+            this.btResTest = new System.Windows.Forms.Button();
             this.groupBox1.SuspendLayout();
             this.groupBox6.SuspendLayout();
             this.groupBox5.SuspendLayout();
@@ -67,6 +68,7 @@ namespace RealtimeFireDetection
             // 
             // groupBox6
             // 
+            this.groupBox6.Controls.Add(this.btResTest);
             this.groupBox6.Controls.Add(this.tbText);
             this.groupBox6.Location = new System.Drawing.Point(672, 422);
             this.groupBox6.Name = "groupBox6";
@@ -77,9 +79,9 @@ namespace RealtimeFireDetection
             // tbText
             // 
             this.tbText.Enabled = false;
-            this.tbText.Location = new System.Drawing.Point(12, 22);
+            this.tbText.Location = new System.Drawing.Point(96, 22);
             this.tbText.Name = "tbText";
-            this.tbText.Size = new System.Drawing.Size(640, 21);
+            this.tbText.Size = new System.Drawing.Size(556, 21);
             this.tbText.TabIndex = 0;
             // 
             // groupBox5
@@ -92,6 +94,16 @@ namespace RealtimeFireDetection
             this.groupBox5.Size = new System.Drawing.Size(658, 57);
             this.groupBox5.TabIndex = 10;
             this.groupBox5.TabStop = false;
+            // 
+            // btRoiConfig
+            // 
+            this.btRoiConfig.Location = new System.Drawing.Point(10, 17);
+            this.btRoiConfig.Name = "btRoiConfig";
+            this.btRoiConfig.Size = new System.Drawing.Size(79, 28);
+            this.btRoiConfig.TabIndex = 11;
+            this.btRoiConfig.Text = "ROI Config";
+            this.btRoiConfig.UseVisualStyleBackColor = true;
+            this.btRoiConfig.Click += new System.EventHandler(this.btRoiConfig_Click);
             // 
             // cbVitualFlame
             // 
@@ -178,15 +190,15 @@ namespace RealtimeFireDetection
             this.lbLog.Size = new System.Drawing.Size(1328, 292);
             this.lbLog.TabIndex = 0;
             // 
-            // btRoiConfig
+            // btResTest
             // 
-            this.btRoiConfig.Location = new System.Drawing.Point(10, 17);
-            this.btRoiConfig.Name = "btRoiConfig";
-            this.btRoiConfig.Size = new System.Drawing.Size(79, 28);
-            this.btRoiConfig.TabIndex = 11;
-            this.btRoiConfig.Text = "ROI Config";
-            this.btRoiConfig.UseVisualStyleBackColor = true;
-            this.btRoiConfig.Click += new System.EventHandler(this.btRoiConfig_Click);
+            this.btResTest.Location = new System.Drawing.Point(15, 17);
+            this.btResTest.Name = "btResTest";
+            this.btResTest.Size = new System.Drawing.Size(75, 29);
+            this.btResTest.TabIndex = 1;
+            this.btResTest.Text = "RES Test";
+            this.btResTest.UseVisualStyleBackColor = true;
+            this.btResTest.Click += new System.EventHandler(this.btResTest_Click);
             // 
             // MainForm
             // 
@@ -231,5 +243,6 @@ namespace RealtimeFireDetection
         private System.Windows.Forms.CheckBox cbVitualFlame;
         private System.Windows.Forms.TextBox tbText;
         private System.Windows.Forms.Button btRoiConfig;
+        private System.Windows.Forms.Button btResTest;
     }
 }

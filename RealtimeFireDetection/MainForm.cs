@@ -1423,6 +1423,50 @@ namespace RealtimeFireDetection
                                 .Select(x => Convert.ToByte(hex.Substring(x, 2), 16))
                                 .ToArray();
         }
+
+        private void TestManualResponse()
+        {
+            ini = new IniFile("./config.ini");
+            string tmp;
+            string msg = "Control reponse confing.ini ";
+            byte[] sendTime;
+            sendTime = dateTimeToByteArray(DateTime.Now);
+            List<byte> lbs = new List<byte>();
+            lbs.AddRange(sendTime);
+            lbs.Add(0x00);  //보고
+
+            tmp = ini.Read("DURATION_FIRE_CHECK(SEC)", "MAIN");
+            lbs.Add(byte.Parse(tmp));
+            msg = msg + tmp + ", ";
+
+            tmp = ini.Read("WARN_THRESHOLD(%)", "MAIN");
+            lbs.Add(byte.Parse(tmp));
+            msg = msg + tmp + ", ";
+
+            tmp = ini.Read("FRAME_COUNT_WARN", "MAIN");
+            lbs.Add(byte.Parse(tmp));
+            msg = msg + tmp + ", ";
+
+            tmp = ini.Read("OCCUR_THRESHOLD(%)", "MAIN");
+            lbs.Add(byte.Parse(tmp));
+            msg = msg + tmp + ", ";
+
+            tmp = ini.Read("FRAME_COUNT_OCCUR", "MAIN");
+            lbs.Add(byte.Parse(tmp));
+            msg = msg + tmp + ", ";
+
+            tmp = ini.Read("STANDARD_DEVIATION_LOW_LIMIT", "MAIN");
+            lbs.Add(byte.Parse(tmp));
+            msg = msg + tmp;
+
+            Logger.Logger.WriteLog(out message, LogType.Info, msg, true);
+            AddLogMessage(message);
+
+            //화재감시 설정 응답 (0x72)
+            listOfResponse.Add(lbs.ToArray());
+            LoRaSendStart = true;
+        }
+
         private void ParsingLoRaMessage(byte[] bs)
         {
             ushort uscrc = GetCRC(bs, 1, bs.Length - 3);
@@ -1431,7 +1475,7 @@ namespace RealtimeFireDetection
             Console.WriteLine();
             if (bs[bs.Length - 2] != crc[0] || bs[bs.Length - 1] != crc[1])
             {
-                Logger.Logger.WriteLog(out message, Logger.LogType.Info,
+                Logger.Logger.WriteLog(out message, LogType.Info,
                     string.Format("CRC Error, Msg: {0:X2}{1:X2} Calc: {2:X2}{3:X2}", bs[bs.Length - 2], bs[bs.Length - 1], crc[0], crc[1]),
                     true);
                 return;
@@ -1449,6 +1493,22 @@ namespace RealtimeFireDetection
             //10. 0A : diagonalMinChange
             //11. 1A : CRC 0
             //12. E6 : CRC 1
+
+
+        //private int fireCheckDuration = 10;
+        ////FRAME_COUNT_WARN=10
+        //private int frameCountWarn = 10;
+        ////WARN_THRESHOLD(%)=50
+        //private double thresholdWarnRate = 0.5;
+        ////FRAME_COUNT_OCCUR=10
+        //private int frameCountOccur = 10;
+        ////OCCUR_THRESHOLD(%)=50
+        //private double thresholdOccurRate = 0.5;
+
+        //private int NO_FIRE_WAIT_TIME = 10;
+        //public static double STANDARD_DEVIATION_LOW_LIMIT = 1.0;
+
+
             try
             {
                 if (bs[4] == 0x01)   //0x00 보고, 0x01 등록
@@ -1460,26 +1520,33 @@ namespace RealtimeFireDetection
                     tmp = Convert.ToString(bs[5]);
                     ini.Write("DURATION_FIRE_CHECK", tmp, "MAIN");
                     msg = msg + tmp + ", ";
+                    fireCheckDuration = bs[5];
 
                     tmp = Convert.ToString(bs[6]);
                     ini.Write("WARN_THRESHOLD(%)", tmp, "MAIN");
                     msg = msg + tmp + ", ";
+                    thresholdWarnRate = bs[6] / 100.0;
 
                     tmp = Convert.ToString(bs[7]);
                     ini.Write("FRAME_COUNT_WARN", tmp, "MAIN");
                     msg = msg + tmp + ", ";
+                    frameCountWarn = bs[7];
 
                     tmp = Convert.ToString(bs[8]);
                     ini.Write("OCCUR_THRESHOLD(%)", tmp, "MAIN");
                     msg = msg + tmp + ", ";
+                    thresholdOccurRate = bs[8] / 100.0;
+
 
                     tmp = Convert.ToString(bs[9]);
                     ini.Write("FRAME_COUNT_OCCUR", tmp, "MAIN");
                     msg = msg + tmp + ", ";
+                    frameCountOccur = bs[9];
 
                     tmp = Convert.ToString(bs[10]);
                     ini.Write("STANDARD_DEVIATION_LOW_LIMIT", tmp, "MAIN");
                     msg = msg + tmp;
+                    STANDARD_DEVIATION_LOW_LIMIT = bs[10];
 
                     Logger.Logger.WriteLog(out message, LogType.Info, msg, true);
                     AddLogMessage(message);
@@ -1854,6 +1921,11 @@ namespace RealtimeFireDetection
             Bitmap bitmap = (Bitmap)pbScreen.Image;
             FormRoi fr = new FormRoi(bitmap, this);
             fr.Show();
+        }
+
+        private void btResTest_Click(object sender, EventArgs e)
+        {
+            TestManualResponse();
         }
     }
 }
