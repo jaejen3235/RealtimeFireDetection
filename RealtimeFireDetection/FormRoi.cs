@@ -188,7 +188,7 @@ namespace RealtimeFireDetection
                 fs = new FileStream(path, FileMode.OpenOrCreate);
                 sw = new StreamWriter(fs);
                 StringBuilder sb = new StringBuilder();
-
+                //리스트 항목이 0이면 저장이 안됨...ㅡㅡ'
                 foreach (KeyValuePair<string, List<Point>> kv in dic)
                 {
                     foreach (Point point in kv.Value)

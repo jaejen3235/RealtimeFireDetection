@@ -23,7 +23,13 @@ namespace RealtimeFireDetection
     public partial class MainForm : Form
     {
         string APP_NAME = "FireDetector";
-        string VER = "1.0.0";
+        string VER = "1.0.6";
+        //1.0.1 Retry to open the VideoCapture, Add Delay() instaed of Thread.sleep()
+        //1.0.2 Cross thread issue (pbScreen.Image = bmp)
+        //1.0.3 Improve a tring to connect to cctv(VideoCapture.Open)
+        //1.0.4 Modify the LoRa message log can be output only when the serial port is normally opened
+        //1.0.5 CCTV 연결상태 유지 (Retry 임시 제거)
+        //1.0.6 CCTV 영상을 10개, 10초 단위로 실시간 저장, YoLo 분석은 직전 저장된 영상을 이용하고 여기서 판단된 영상 정보를 전송
 
         public readonly static byte ALARM_TYPE_NORMAL = 0;
         public readonly static byte ALARM_TYPE_WARN = 1;
@@ -139,6 +145,7 @@ namespace RealtimeFireDetection
 
                 while ((line = sr.ReadLine()) != null)
                 {
+                    Console.WriteLine(line);
                     key = line.Substring(0, line.IndexOf(":"));
                     values = line.Substring(line.IndexOf(":") + 1);
                     tmps = values.Split(',');
@@ -162,7 +169,7 @@ namespace RealtimeFireDetection
             }
             finally
             {
-                if (sr != null) sr.Close();
+                sr?.Close();
             }
         }
 
@@ -386,59 +393,232 @@ namespace RealtimeFireDetection
             return false;
         }
 
+        private VideoCapture InitVideoCapture()
+        {
+            VideoCapture video = new VideoCapture();
+            //video.setExceptionMode(True);
+            //video.set(Cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000);
+            video.Open(CamUri);
+            if (video.Fps == 0) return null;
+            double CAM_FPS = video.Fps;
+            int sleepTime = (int)Math.Round(1000 / video.Fps);
+            LogMessage msg;
+            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("VIDEO CAPTURE  FPS:{0}, SLEEP_TIME:{1}", video.Fps, sleepTime), true);
+            AddLogMessage(msg);
+            return video;
+        }
+
+        private void Delay(int ms)
+        {
+            DateTime dateTimeNow = DateTime.Now;
+            TimeSpan duration = new TimeSpan(0, 0, 0, 0, ms);
+            DateTime dateTimeAdd = dateTimeNow.Add(duration);
+            while (dateTimeAdd >= dateTimeNow)
+            {
+                System.Windows.Forms.Application.DoEvents();
+                dateTimeNow = DateTime.Now;
+            }
+            return;
+        }
+
+        private void PlayAndRecord()
+        {
+            VideoCapture vc = null;
+            VideoWriter vw = new VideoWriter();
+            int failCount = 0;
+            int recordNum = 0;
+            string path = "./records/";
+            string recName = "";
+
+            if (!Directory.Exists(path))
+            {
+                Directory.CreateDirectory(path);
+            }
+            Mat image = new Mat();
+
+            while (true)
+            {
+                vc = InitVideoCapture();
+                if (!vc.IsOpened()) 
+                { 
+                    Thread.Sleep(10 * 1000);  continue; 
+                }
+
+                Console.WriteLine("{0} {1}", DateTime.Now, "InitVideoCapture()");
+                doPlay = true;
+                int fHeight = vc.FrameHeight;
+                int fWidth = vc.FrameWidth;
+
+                DateTime startTime = DateTime.Now;
+                recName = string.Format("record_{0:D2}.avi", recordNum);
+                vw.Open(string.Format("{0}{1}", path, recName), FourCC.DIVX, vc.Fps, new OpenCvSharp.Size(fWidth, fHeight));
+
+                while (doPlay)
+                {
+                    bool b = vc.Read(image);
+                    Cv2.WaitKey(1);
+
+                    if (b && !image.Empty())
+                    {
+                        //drawDateTimeOnTheMat(image, DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff"));
+                        /////////////////////////////////////////////////////////////////////////// 
+                        ///관심영역
+                        if (DicRoiList.Count > 0)
+                        {
+                            RoiList.Clear();
+                            foreach (KeyValuePair<string, List<Point>> kv in DicRoiList)
+                            {
+                                RoiList.Add(kv.Value);
+                            }
+                            Cv2.Polylines(image, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
+                        }
+                        /////////////////////////////////////////////////////////////////////////// 
+                        ///비관심영역
+                        if (DicNonRoiList.Count > 0)
+                        {
+                            NonRoiList.Clear();
+                            foreach (KeyValuePair<string, List<Point>> kv in DicNonRoiList)
+                            {
+                                NonRoiList.Add(kv.Value);
+                            }
+                            Cv2.FillPoly(image, NonRoiList, Scalar.Black);
+                        }
+                        if (pbScreen.InvokeRequired)
+                        {
+                            pbScreen.Invoke((MethodInvoker)delegate ()
+                            {
+                                pbScreen.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
+                            });
+                        }
+                        else
+                        {
+                            pbScreen.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
+                        }
+
+                        if (!vw.IsOpened())
+                        {
+                            recName = string.Format("record_{0:D2}.avi", recordNum);
+                            Console.WriteLine("{0} Record start ({1}).", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), recName);
+                            startTime = DateTime.Now;
+                            vw.Open(string.Format("{0}{1}", path, recName), FourCC.XVID, vc.Fps, new OpenCvSharp.Size(fWidth, fHeight));
+                        }
+
+                        vw.Write(image);
+
+                        if ((DateTime.Now - startTime).TotalMilliseconds >= (10 * 1000))
+                        {
+                            Console.WriteLine("{0} Record done ({1}).", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), recName);
+                            Thread t = new Thread(() => FlameDetector(path + recName));
+                            t.Start();
+                            if (recordNum >= 9) recordNum = 0;
+                            else recordNum++;
+                            vw.Release();
+                        }
+                        failCount = 0;
+                    }
+                    else
+                    {
+                        failCount++;
+                        Console.WriteLine("{0} Fail count to grab image ({1}).", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), failCount);
+                    }
+
+                    //Thread.Sleep((int)vc.Fps);
+                    if (failCount >= 60)
+                    {
+                        failCount = 0;
+                        doPlay = false;
+                        if (vc != null) vc.Release();
+                        if (vw != null) vw.Release();
+                    }
+                }//while(doPaly)
+                try
+                {
+                    if (vc != null) vc.Release();
+                    if (vw != null) vw.Release();
+                    vc = null; vw = null;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.ToString());
+                }
+            }//while
+        }
+
+        private void FlameDetector(string recName)
+        {
+            VideoCapture capture = new VideoCapture(recName);
+
+            int sleepTime = (int)Math.Round(1000 / capture.Fps);
+
+            using (Mat image = new Mat()) // Frame image buffer
+            {
+                Thread.Sleep(2000);
+                // When the movie playback reaches end, Mat.data becomes NULL.
+                Console.WriteLine("{0} Play start ({1}).", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), recName);
+                Console.WriteLine("{0} FPS {1}, Frame count {2}", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), capture.Fps, capture.FrameCount);
+                while (capture.Read(image))
+                {
+                    if(image == null || image.Empty()) break;
+                    capture.Read(image);
+                    Cv2.WaitKey((int)capture.Fps);
+                }
+                image.Dispose();
+                capture.Release();
+                Cv2.DestroyAllWindows();
+                Console.WriteLine("{0} Play done.", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"));
+            }
+        }
+
         private void RunFlameMonitor()
         {
             detector = new YoloDetector("best_yolov5.onnx");
-            VideoCapture video = new VideoCapture();
-            //video.Open("rtsp://admin:Dainlab2306@169.254.9.51:554/H.264/media.smp");
-            video.Open(CamUri);
-            //VideoWriter vWriter = null;
-            //bool isFirstFrame = true;
+            VideoCapture video = InitVideoCapture();
             Stopwatch stopwatch = new Stopwatch();
             stopwatch.Start();
             Mat matImage = null;
             bool isFirst = true;
             Stopwatch noFireWatch = new Stopwatch();
             noFireWatch.Stop();
-            int matImageFailCount = 0;
             System.Drawing.Size resize = new System.Drawing.Size(pbScreen.Width, pbScreen.Height);
+            int waitCount = 0;
 
             using (Mat image = new Mat())
             {
                 while (doPlay)
                 {
-                    if (!video.Read(image))
+                    if (video == null || !video.Read(image))
                     {
-                        Console.WriteLine(DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + " Cv2.WaitKey()");
-                        Cv2.WaitKey(1000);
-                        video.Release();
-                        Thread.Sleep(1000);
-                        if (video.Open(CamUri))
+                        Cv2.WaitKey();
+                        waitCount++;
+                        if (waitCount >= 500)
                         {
-                            Console.WriteLine(DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + " Retry to Open");
-                            matImageFailCount = 0;
-                            continue;
-                        }
-                        else
-                        {
-                            matImageFailCount++;
-                            if (matImageFailCount > 10)
+                            waitCount = 0;
+                            try
                             {
-                                matImageFailCount = 0;
-                                video.Dispose(); video = null;
-                                Thread.Sleep(1000);
-                                video = new VideoCapture();
-                                Console.WriteLine(DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + "fail count more than 10,  new VideoCapture()");
-                                Thread.Sleep(1000);
-                                video.Open(CamUri);
-                                Console.WriteLine(DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + "fail count more than 10,  Open Uri");
-                                Thread.Sleep(1000);
+                                if (video != null)
+                                {
+                                    video.Release();
+                                    video.Dispose();
+                                }
+                                Delay(2 * 1000);
+                                Console.WriteLine("{0} {1}", DateTime.Now, "InitVideoCapture()");
+                                video = InitVideoCapture();
+                                Delay(2 * 1000);
                             }
-                            continue;
+                            catch (Exception e)
+                            {
+                                Console.WriteLine("E1: " + e.StackTrace);
+                                Console.WriteLine("E2: " + e.Message);
+                                Console.WriteLine("E3: " + e.Source);
+                                Console.WriteLine("E4: " + e.ToString());
+                                continue;
+                            }
                         }
+
                     }
                     if (!image.Empty())
                     {
+                        waitCount = 0;
                         if (isFirst)
                         {
                             scaleDnW = (double)pbScreen.Width / (double)image.Width;
@@ -487,10 +667,18 @@ namespace RealtimeFireDetection
                         Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
                         bmp = new Bitmap(bmp, resize);
 
-                        pbScreen.Invoke((MethodInvoker)delegate ()
+                        //20240227 invokeRequired
+                        if (pbScreen.InvokeRequired)
+                        {
+                            pbScreen.Invoke((MethodInvoker)delegate ()
+                            {
+                                pbScreen.Image = bmp;
+                            });
+                        }
+                        else
                         {
                             pbScreen.Image = bmp;
-                        });
+                        }
 
                         if (stopwatch.ElapsedMilliseconds > 1000 * fireCheckDuration)
                         {
@@ -1003,7 +1191,13 @@ namespace RealtimeFireDetection
             doPlay = true;
             //bMin = DateTime.Now.Minute;
             //CamThread = new Thread(playCam)
-            CamThread = new Thread(RunFlameMonitor)
+            /*            CamThread = new Thread(RunFlameMonitor)
+                        {
+                            Name = "Camera Thread"
+                        };
+                        CamThread.Start();
+            */
+            CamThread = new Thread(PlayAndRecord)
             {
                 Name = "Camera Thread"
             };
@@ -1277,11 +1471,9 @@ namespace RealtimeFireDetection
             {
                 LoRaSerialPort.Write(finalFrame, 0, finalFrame.Length);
                 lastLoRaTxRxTime = DateTime.Now;
+                Logger.Logger.WriteLog(out message, Logger.LogType.Info, "-> LoRa: [" + hexByteToAscii(dataFrame) + "]", true);
+                AddLogMessage(message);
             }
-            Logger.Logger.WriteLog(out message, Logger.LogType.Info, "-> LoRa: " + Encoding.Default.GetString(finalFrame), true);
-            AddLogMessage(message);
-            Logger.Logger.WriteLog(out message, Logger.LogType.Info, "-> LoRa: [" + hexByteToAscii(dataFrame) + "]", true);
-            AddLogMessage(message);
         }
 
         private string hexByteToAscii(byte[] bs)
