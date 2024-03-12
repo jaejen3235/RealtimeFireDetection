@@ -189,15 +189,22 @@ namespace RealtimeFireDetection
                 sw = new StreamWriter(fs);
                 StringBuilder sb = new StringBuilder();
                 //리스트 항목이 0이면 저장이 안됨...ㅡㅡ'
-                foreach (KeyValuePair<string, List<Point>> kv in dic)
+                if(dic.Count <= 0)
                 {
-                    foreach (Point point in kv.Value)
+                    sw.WriteLine("");
+                }
+                else
+                {
+                    foreach (KeyValuePair<string, List<Point>> kv in dic)
                     {
-                        sb.Append(point.X + "-" + point.Y + ",");
+                        foreach (Point point in kv.Value)
+                        {
+                            sb.Append(point.X + "-" + point.Y + ",");
+                        }
+                        Console.WriteLine("SAVE Point Key: {0}, Value: {1}", kv.Key, sb.ToString().Substring(0, sb.ToString().Length - 1));
+                        sw.WriteLine(kv.Key + ":" + sb.ToString().Substring(0, sb.ToString().Length - 1));
+                        sb.Clear();
                     }
-                    Console.WriteLine("SAVE Point Key: {0}, Value: {1}", kv.Key, sb.ToString().Substring(0, sb.ToString().Length - 1));
-                    sw.WriteLine(kv.Key + ":" + sb.ToString().Substring(0, sb.ToString().Length - 1));
-                    sb.Clear();
                 }
             }
             catch (Exception e)

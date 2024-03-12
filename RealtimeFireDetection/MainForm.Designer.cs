@@ -29,10 +29,13 @@ namespace RealtimeFireDetection
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
             this.groupBox6 = new System.Windows.Forms.GroupBox();
+            this.btResTest = new System.Windows.Forms.Button();
             this.tbText = new System.Windows.Forms.TextBox();
             this.groupBox5 = new System.Windows.Forms.GroupBox();
+            this.btOpenCam = new System.Windows.Forms.Button();
             this.btRoiConfig = new System.Windows.Forms.Button();
             this.cbVitualFlame = new System.Windows.Forms.CheckBox();
             this.button1 = new System.Windows.Forms.Button();
@@ -42,7 +45,7 @@ namespace RealtimeFireDetection
             this.pbScreen = new System.Windows.Forms.PictureBox();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
             this.lbLog = new System.Windows.Forms.ListBox();
-            this.btResTest = new System.Windows.Forms.Button();
+            this.timer1 = new System.Windows.Forms.Timer(this.components);
             this.groupBox1.SuspendLayout();
             this.groupBox6.SuspendLayout();
             this.groupBox5.SuspendLayout();
@@ -76,6 +79,16 @@ namespace RealtimeFireDetection
             this.groupBox6.TabIndex = 11;
             this.groupBox6.TabStop = false;
             // 
+            // btResTest
+            // 
+            this.btResTest.Location = new System.Drawing.Point(15, 17);
+            this.btResTest.Name = "btResTest";
+            this.btResTest.Size = new System.Drawing.Size(75, 29);
+            this.btResTest.TabIndex = 1;
+            this.btResTest.Text = "RES Test";
+            this.btResTest.UseVisualStyleBackColor = true;
+            this.btResTest.Click += new System.EventHandler(this.btResTest_Click);
+            // 
             // tbText
             // 
             this.tbText.Enabled = false;
@@ -86,6 +99,7 @@ namespace RealtimeFireDetection
             // 
             // groupBox5
             // 
+            this.groupBox5.Controls.Add(this.btOpenCam);
             this.groupBox5.Controls.Add(this.btRoiConfig);
             this.groupBox5.Controls.Add(this.cbVitualFlame);
             this.groupBox5.Controls.Add(this.button1);
@@ -95,9 +109,19 @@ namespace RealtimeFireDetection
             this.groupBox5.TabIndex = 10;
             this.groupBox5.TabStop = false;
             // 
+            // btOpenCam
+            // 
+            this.btOpenCam.Location = new System.Drawing.Point(16, 18);
+            this.btOpenCam.Name = "btOpenCam";
+            this.btOpenCam.Size = new System.Drawing.Size(100, 27);
+            this.btOpenCam.TabIndex = 12;
+            this.btOpenCam.Text = "Start";
+            this.btOpenCam.UseVisualStyleBackColor = true;
+            this.btOpenCam.Click += new System.EventHandler(this.btOpenCam_Click);
+            // 
             // btRoiConfig
             // 
-            this.btRoiConfig.Location = new System.Drawing.Point(10, 17);
+            this.btRoiConfig.Location = new System.Drawing.Point(131, 17);
             this.btRoiConfig.Name = "btRoiConfig";
             this.btRoiConfig.Size = new System.Drawing.Size(79, 28);
             this.btRoiConfig.TabIndex = 11;
@@ -190,15 +214,10 @@ namespace RealtimeFireDetection
             this.lbLog.Size = new System.Drawing.Size(1328, 292);
             this.lbLog.TabIndex = 0;
             // 
-            // btResTest
+            // timer1
             // 
-            this.btResTest.Location = new System.Drawing.Point(15, 17);
-            this.btResTest.Name = "btResTest";
-            this.btResTest.Size = new System.Drawing.Size(75, 29);
-            this.btResTest.TabIndex = 1;
-            this.btResTest.Text = "RES Test";
-            this.btResTest.UseVisualStyleBackColor = true;
-            this.btResTest.Click += new System.EventHandler(this.btResTest_Click);
+            this.timer1.Interval = 1000;
+            this.timer1.Tick += new System.EventHandler(this.timer1_Tick);
             // 
             // MainForm
             // 
@@ -244,5 +263,7 @@ namespace RealtimeFireDetection
         private System.Windows.Forms.TextBox tbText;
         private System.Windows.Forms.Button btRoiConfig;
         private System.Windows.Forms.Button btResTest;
+        private System.Windows.Forms.Button btOpenCam;
+        private System.Windows.Forms.Timer timer1;
     }
 }

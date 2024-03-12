@@ -1,5 +1,6 @@
 ﻿using IPC4Fire;
 using OpenCvSharp;
+using OpenHardwareMonitor.Hardware;
 using RealtimeFireDetection.Logger;
 using RealtimeFireDetection.Yolov5;
 using System;
@@ -12,10 +13,16 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Ports;
 using System.Linq;
+using System.Management;
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Policy;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using static System.Resources.ResXFileRef;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.Window;
 using Point = OpenCvSharp.Point;
 
 namespace RealtimeFireDetection
@@ -23,13 +30,14 @@ namespace RealtimeFireDetection
     public partial class MainForm : Form
     {
         string APP_NAME = "FireDetector";
-        string VER = "1.0.6";
+        string VER = "1.1.6";
         //1.0.1 Retry to open the VideoCapture, Add Delay() instaed of Thread.sleep()
         //1.0.2 Cross thread issue (pbScreen.Image = bmp)
         //1.0.3 Improve a tring to connect to cctv(VideoCapture.Open)
         //1.0.4 Modify the LoRa message log can be output only when the serial port is normally opened
         //1.0.5 CCTV 연결상태 유지 (Retry 임시 제거)
-        //1.0.6 CCTV 영상을 10개, 10초 단위로 실시간 저장, YoLo 분석은 직전 저장된 영상을 이용하고 여기서 판단된 영상 정보를 전송
+        //1.0.6 CCTV 영상을 10개, 10초 단위로 실시간 저장, YoLo 분석은 직전 저장된 영상을 이용하고 여기서 판단된 화재 정보를 전송
+        //1.1.6 상태보고 추가
 
         public readonly static byte ALARM_TYPE_NORMAL = 0;
         public readonly static byte ALARM_TYPE_WARN = 1;
@@ -41,10 +49,14 @@ namespace RealtimeFireDetection
         private DateTime lastLoRaTxRxTime;
 
         private bool LoRaSendStart = false;
+        private bool ReportState = false;
+        private bool ResponseStart = false;
         private List<byte[]> listOfResponse = new List<byte[]>();
         private string comport;
         private string baudRate = "115200";
         private bool rbLoRaReceiveASCII = true;
+
+        private SystemInfo systemInfo = null;
 
         private Thread threadDoWork;
         private bool bThreadDoWorkRun = false;
@@ -84,6 +96,7 @@ namespace RealtimeFireDetection
         string CamUri;
         Queue<Mat> matQueue = new Queue<Mat>();
         DateTime receivedEventTime = DateTime.Now;
+        int bMin = DateTime.Now.Minute;
 
         double scaleDnW;
         double scaleDnH;
@@ -124,8 +137,13 @@ namespace RealtimeFireDetection
             DicNonRoiList = new Dictionary<string, List<Point>>();
 
             initApp();
+            
+            systemInfo = new SystemInfo(this);
+
+            detector = new YoloDetector("best_yolov5.onnx");
             loadRegions(PathRoiList, DicRoiList);
             loadRegions(PathNonRoiList, DicNonRoiList);
+            initUdpClient();
         }
 
         private void loadRegions(string path, Dictionary<string, List<Point>> dic)
@@ -421,10 +439,137 @@ namespace RealtimeFireDetection
             return;
         }
 
+        private void cWrite(string str)
+        {
+            Console.WriteLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + str);
+        }
+
+        private void PlayAndRecord(int c)
+        {
+            VideoCapture video = null;
+            bool stopCctv;
+
+            while (true)
+            {
+                if (video == null) video = new VideoCapture();
+                video.Open(CamUri);
+                stopCctv = false;
+                int count = 0;
+
+                using (Mat image = new Mat())
+                {
+                    while (!stopCctv)
+                    {
+                        if (!video.Read(image))
+                        {
+                            cWrite("Cv2.WaitKey();");
+                            count++;
+                            Cv2.WaitKey();
+                        }
+                        if (!image.Empty())
+                        {
+                            count = 0;
+                            if (pbScreen.InvokeRequired)
+                            {
+                                pbScreen.Invoke((MethodInvoker)delegate ()
+                                {
+                                    pbScreen.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
+                                });
+                            }
+                            else
+                            {
+                                pbScreen.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
+                            }
+                        }
+                        else
+                        {
+                            cWrite("image.Empty()");
+                            count++;
+                        }
+                        if (Cv2.WaitKey(1) >= 0)
+                        {
+                            cWrite("break;");
+                            stopCctv = true;
+                        }
+                        if (count > 100)
+                        {
+                            cWrite("count > 100");
+                            stopCctv = true;
+                        }
+                        GC.Collect(); GC.WaitForPendingFinalizers();
+                    }
+                    cWrite("Broken.");
+                }//while
+                try
+                {
+                    video.Release();
+                    video.Dispose();
+                    cWrite("Release();");
+                }
+                catch
+                {
+                }
+                video = null;
+                Thread.Sleep(1000);
+            }//while
+        }
+
+        private void PlayAndRecord(string str)
+        {
+            VideoCapture video = new VideoCapture();
+            VideoWriter vw = null;
+            bool stopCctv = false;
+            if (video != null && video.IsOpened())
+            {
+                try
+                {
+                    video.Release();
+                    video.Dispose();
+                }
+                catch
+                {
+                }
+            }
+            video.Open(CamUri);
+            stopCctv = false;
+            int count = 0;
+
+            using (Mat image = new Mat())
+            {
+                while (!stopCctv)
+                {
+                    if (!video.Read(image))
+                    {
+                        count++;
+                        Cv2.WaitKey();
+                    }
+                    if (!image.Empty())
+                    {
+                        Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
+                        pbScreen.Image = bmp;
+                    }
+                    else
+                    {
+                        count++;
+                    }
+                    if (Cv2.WaitKey(1) >= 0)
+                    {
+                        stopCctv = true;
+                    }
+                    if (count > 1000)
+                    {
+                        stopCctv = true;
+                    }
+                    GC.Collect(); GC.WaitForPendingFinalizers();
+                }
+            }
+            video = null;
+        }
+
         private void PlayAndRecord()
         {
             VideoCapture vc = null;
-            VideoWriter vw = new VideoWriter();
+            VideoWriter vw = null;
             int failCount = 0;
             int recordNum = 0;
             string path = "./records/";
@@ -438,66 +583,47 @@ namespace RealtimeFireDetection
 
             while (true)
             {
-                vc = InitVideoCapture();
-                if (!vc.IsOpened()) 
-                { 
-                    Thread.Sleep(10 * 1000);  continue; 
+                if (vc == null) vc = new VideoCapture();
+                vc.Open(CamUri);
+                if (!vc.IsOpened())
+                {
+                    vc = null;
+                    Thread.Sleep(3000);
+                    continue;
                 }
-
+                vw = new VideoWriter();
                 Console.WriteLine("{0} {1}", DateTime.Now, "InitVideoCapture()");
                 doPlay = true;
+                failCount = 0;
                 int fHeight = vc.FrameHeight;
                 int fWidth = vc.FrameWidth;
 
                 DateTime startTime = DateTime.Now;
-                recName = string.Format("record_{0:D2}.avi", recordNum);
+                ///////////////////////////////////////////////////////////////////////////////////
+                //20240308 연속 저장으로 변경
+                //recName = string.Format("record_{0:D2}.avi", recordNum);
+                recName = string.Format("{0}", DateTime.Now.ToString("yyyyMMdd_HHmmss_fff.avi"));
+                ///////////////////////////////////////////////////////////////////////////////////
                 vw.Open(string.Format("{0}{1}", path, recName), FourCC.DIVX, vc.Fps, new OpenCvSharp.Size(fWidth, fHeight));
 
                 while (doPlay)
                 {
-                    bool b = vc.Read(image);
-                    Cv2.WaitKey(1);
+                    if (!vc.Read(image))
+                    {
+                        failCount++;
+                        Cv2.WaitKey();
+                    }
 
-                    if (b && !image.Empty())
+                    if (!image.Empty())
                     {
                         //drawDateTimeOnTheMat(image, DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff"));
-                        /////////////////////////////////////////////////////////////////////////// 
-                        ///관심영역
-                        if (DicRoiList.Count > 0)
-                        {
-                            RoiList.Clear();
-                            foreach (KeyValuePair<string, List<Point>> kv in DicRoiList)
-                            {
-                                RoiList.Add(kv.Value);
-                            }
-                            Cv2.Polylines(image, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
-                        }
-                        /////////////////////////////////////////////////////////////////////////// 
-                        ///비관심영역
-                        if (DicNonRoiList.Count > 0)
-                        {
-                            NonRoiList.Clear();
-                            foreach (KeyValuePair<string, List<Point>> kv in DicNonRoiList)
-                            {
-                                NonRoiList.Add(kv.Value);
-                            }
-                            Cv2.FillPoly(image, NonRoiList, Scalar.Black);
-                        }
-                        if (pbScreen.InvokeRequired)
-                        {
-                            pbScreen.Invoke((MethodInvoker)delegate ()
-                            {
-                                pbScreen.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
-                            });
-                        }
-                        else
-                        {
-                            pbScreen.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(image);
-                        }
-
                         if (!vw.IsOpened())
                         {
-                            recName = string.Format("record_{0:D2}.avi", recordNum);
+                            ///////////////////////////////////////////////////////////////////////////////////
+                            //20240308 연속 저장으로 변경
+                            //recName = string.Format("record_{0:D2}.avi", recordNum);
+                            recName = string.Format("{0}", DateTime.Now.ToString("yyyyMMdd_HHmmss_fff.avi"));
+                            ///////////////////////////////////////////////////////////////////////////////////
                             Console.WriteLine("{0} Record start ({1}).", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), recName);
                             startTime = DateTime.Now;
                             vw.Open(string.Format("{0}{1}", path, recName), FourCC.XVID, vc.Fps, new OpenCvSharp.Size(fWidth, fHeight));
@@ -508,11 +634,13 @@ namespace RealtimeFireDetection
                         if ((DateTime.Now - startTime).TotalMilliseconds >= (10 * 1000))
                         {
                             Console.WriteLine("{0} Record done ({1}).", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), recName);
-                            Thread t = new Thread(() => FlameDetector(path + recName));
-                            t.Start();
+                            
                             if (recordNum >= 9) recordNum = 0;
                             else recordNum++;
                             vw.Release();
+
+                            Thread t = new Thread(() => FlameDetector(path + recName));
+                            t.Start();
                         }
                         failCount = 0;
                     }
@@ -522,48 +650,104 @@ namespace RealtimeFireDetection
                         Console.WriteLine("{0} Fail count to grab image ({1}).", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), failCount);
                     }
 
-                    //Thread.Sleep((int)vc.Fps);
-                    if (failCount >= 60)
+                    if (Cv2.WaitKey(1) >= 0)
                     {
-                        failCount = 0;
                         doPlay = false;
-                        if (vc != null) vc.Release();
-                        if (vw != null) vw.Release();
                     }
+                    if (failCount >= 50)
+                    {
+                        doPlay = false;
+                    }
+                    GC.Collect(); GC.WaitForPendingFinalizers();
                 }//while(doPaly)
+
                 try
                 {
-                    if (vc != null) vc.Release();
-                    if (vw != null) vw.Release();
-                    vc = null; vw = null;
+                    vc?.Release();
+                    vw?.Release();
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine(ex.ToString());
+                }
+                finally
+                {
+                    vc = null; vw = null;
                 }
             }//while
         }
 
         private void FlameDetector(string recName)
         {
-            VideoCapture capture = new VideoCapture(recName);
+            VideoCapture video = new VideoCapture(@"c:/OpenCvTester/records/"+recName);
 
-            int sleepTime = (int)Math.Round(1000 / capture.Fps);
-
+            int sleepTime = (int)Math.Round(1000 / video.Fps);
+            System.Drawing.Size resize = new System.Drawing.Size(pbResult.Width, pbResult.Height);
+            int frameCnt = 0;
             using (Mat image = new Mat()) // Frame image buffer
             {
-                Thread.Sleep(2000);
                 // When the movie playback reaches end, Mat.data becomes NULL.
                 Console.WriteLine("{0} Play start ({1}).", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), recName);
-                Console.WriteLine("{0} FPS {1}, Frame count {2}", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), capture.Fps, capture.FrameCount);
-                while (capture.Read(image))
+                Console.WriteLine("{0} FPS {1}, Frame count {2}", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), video.Fps, video.FrameCount);
+                while (true)
                 {
-                    if(image == null || image.Empty()) break;
-                    capture.Read(image);
-                    Cv2.WaitKey((int)capture.Fps);
+                    video.Read(image);
+                    if (image.Empty()) break;
+                    frameCnt++;
+                    if (frameCnt < 30) continue;
+                    frameCnt = 0;
+                    //Console.WriteLine("{0} Starting analysis", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"));
+                    /////////////////////////////////////////////////////////////////////////// 
+                    ///관심영역
+                    if (DicRoiList.Count > 0)
+                    {
+                        RoiList.Clear();
+                        foreach (KeyValuePair<string, List<Point>> kv in DicRoiList)
+                        {
+                            RoiList.Add(kv.Value);
+                        }
+                        Cv2.Polylines(image, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
+                    }
+                    /////////////////////////////////////////////////////////////////////////// 
+                    ///비관심영역
+                    if (DicNonRoiList.Count > 0)
+                    {
+                        NonRoiList.Clear();
+                        foreach (KeyValuePair<string, List<Point>> kv in DicNonRoiList)
+                        {
+                            NonRoiList.Add(kv.Value);
+                        }
+                        Cv2.FillPoly(image, NonRoiList, Scalar.Black);
+                    }
+                    //Console.WriteLine("{0} Do YoLo", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"));
+                    var result = DoYoLo(image);
+                    if (result != null && result.Count > 0)
+                    {
+                        Bitmap bmpResult = saveFlameInfo(image, result);
+                        bmpResult = new Bitmap(bmpResult, resize);
+
+
+                        pbResult.Invoke((MethodInvoker)delegate ()
+                        {
+                            pbResult.Image = bmpResult;
+                            pbResult.Update();
+                        });
+                        //noFireWatch.Reset();
+                        //if (!noFireWatch.IsRunning) noFireWatch.Start();
+                    }
+                    else
+                    {
+                        //if (noFireWatch.ElapsedMilliseconds > 1000 * NO_FIRE_WAIT_TIME)
+                        //{
+                        //    noFireWatch.Stop();
+                        //    noFireWatch.Reset();
+                        //    resetState();
+                        //}
+                    }
+                    //Cv2.WaitKey(33);
                 }
                 image.Dispose();
-                capture.Release();
+                video.Release();
                 Cv2.DestroyAllWindows();
                 Console.WriteLine("{0} Play done.", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"));
             }
@@ -571,7 +755,6 @@ namespace RealtimeFireDetection
 
         private void RunFlameMonitor()
         {
-            detector = new YoloDetector("best_yolov5.onnx");
             VideoCapture video = InitVideoCapture();
             Stopwatch stopwatch = new Stopwatch();
             stopwatch.Start();
@@ -581,150 +764,154 @@ namespace RealtimeFireDetection
             noFireWatch.Stop();
             System.Drawing.Size resize = new System.Drawing.Size(pbScreen.Width, pbScreen.Height);
             int waitCount = 0;
+            Thread yoloThread = null;
 
-            using (Mat image = new Mat())
+            while(true)
             {
-                while (doPlay)
+                using (Mat image = new Mat())
                 {
-                    if (video == null || !video.Read(image))
+                    while (doPlay)
                     {
-                        Cv2.WaitKey();
-                        waitCount++;
-                        if (waitCount >= 500)
+                        if (video == null || !video.Read(image))
+                        {
+                            Cv2.WaitKey();
+                            waitCount++;
+                            if (waitCount >= 100)
+                            {
+                                waitCount = 0;
+                                doPlay = false;
+                            }
+                        }
+                        if (!image.Empty())
                         {
                             waitCount = 0;
-                            try
+                            if (isFirst)
                             {
-                                if (video != null)
-                                {
-                                    video.Release();
-                                    video.Dispose();
-                                }
-                                Delay(2 * 1000);
-                                Console.WriteLine("{0} {1}", DateTime.Now, "InitVideoCapture()");
-                                video = InitVideoCapture();
-                                Delay(2 * 1000);
+                                scaleDnW = (double)pbScreen.Width / (double)image.Width;
+                                scaleDnH = (double)pbScreen.Height / (double)image.Height;
+                                scaleUpW = (double)image.Width / (double)pbScreen.Width;
+                                scaleUpH = (double)image.Height / (double)pbScreen.Height;
+                                isFirst = false;
                             }
-                            catch (Exception e)
-                            {
-                                Console.WriteLine("E1: " + e.StackTrace);
-                                Console.WriteLine("E2: " + e.Message);
-                                Console.WriteLine("E3: " + e.Source);
-                                Console.WriteLine("E4: " + e.ToString());
-                                continue;
-                            }
-                        }
 
-                    }
-                    if (!image.Empty())
-                    {
-                        waitCount = 0;
-                        if (isFirst)
-                        {
-                            scaleDnW = (double)pbScreen.Width / (double)image.Width;
-                            scaleDnH = (double)pbScreen.Height / (double)image.Height;
-                            scaleUpW = (double)image.Width / (double)pbScreen.Width;
-                            scaleUpH = (double)image.Height / (double)pbScreen.Height;
-                            isFirst = false;
-                        }
-
-                        lock (flameListLock)
-                        {
                             if (virtualFlameList.Count() > 0)
                             {
                                 matImage = drawFlames(image);
                             }
                             else matImage = image;
-                        }
-
-                        ///////////////////////////////////////////////////////////////////////////
-                        ///관심영역
-                        if(DicRoiList.Count > 0)
-                        {
-                            RoiList.Clear();
-                            foreach (KeyValuePair<string, List<Point>> kv in DicRoiList)
+                            ///////////////////////////////////////////////////////////////////////////
+                            ///관심영역
+                            if (DicRoiList.Count > 0)
                             {
-                                RoiList.Add(kv.Value);
+                                RoiList.Clear();
+                                foreach (KeyValuePair<string, List<Point>> kv in DicRoiList)
+                                {
+                                    RoiList.Add(kv.Value);
+                                }
+                                Cv2.Polylines(matImage, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
                             }
-                            Cv2.Polylines(matImage, RoiList, true, Scalar.Magenta, 1, LineTypes.AntiAlias);
-                        }
-                        /////////////////////////////////////////////////////////////////////////// 
-                        ///비관심영역
-                        if (DicNonRoiList.Count > 0)
-                        {
-                            NonRoiList.Clear();
-                            foreach (KeyValuePair<string, List<Point>> kv in DicNonRoiList)
+                            /////////////////////////////////////////////////////////////////////////// 
+                            ///비관심영역
+                            if (DicNonRoiList.Count > 0)
                             {
-                                NonRoiList.Add(kv.Value);
+                                NonRoiList.Clear();
+                                foreach (KeyValuePair<string, List<Point>> kv in DicNonRoiList)
+                                {
+                                    NonRoiList.Add(kv.Value);
+                                }
+                                Cv2.FillPoly(matImage, NonRoiList, Scalar.Black);
                             }
-                            Cv2.FillPoly(matImage, NonRoiList, Scalar.Black);
-                        }
-                        ///Time-stamp
-                        string dt = DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff");
-                        //string fdt = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                        drawDateTimeOnTheMat(matImage, dt);
+                            ///Time-stamp
+                            string dt = DateTime.Now.ToString(@"yyyy\/MM\/dd HH:mm:ss.fff");
+                            //string fdt = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                            drawDateTimeOnTheMat(matImage, dt);
 
-                        Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
-                        bmp = new Bitmap(bmp, resize);
+                            Bitmap bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(matImage);
+                            bmp = new Bitmap(bmp, resize);
 
-                        //20240227 invokeRequired
-                        if (pbScreen.InvokeRequired)
-                        {
-                            pbScreen.Invoke((MethodInvoker)delegate ()
+                            //20240227 invokeRequired
+                            if (pbScreen.InvokeRequired)
+                            {
+                                pbScreen.Invoke((MethodInvoker)delegate ()
+                                {
+                                    pbScreen.Image = bmp;
+                                });
+                            }
+                            else
                             {
                                 pbScreen.Image = bmp;
-                            });
-                        }
-                        else
-                        {
-                            pbScreen.Image = bmp;
-                        }
+                            }
 
-                        if (stopwatch.ElapsedMilliseconds > 1000 * fireCheckDuration)
-                        {
-                            stopwatch.Stop();
-
-                            Thread t = new Thread(() => {
-                                using(Mat yoloImage = matImage.Clone())
+                            if (stopwatch.ElapsedMilliseconds > 1000 * fireCheckDuration)
+                            {
+                                stopwatch.Stop();
+                                if(yoloThread == null || !yoloThread.IsAlive)
                                 {
-                                    var result = DoYoLo(yoloImage);
-                                    
-                                    //if (result.Count > 0 && checkROIin(result))
-                                    if (result != null && result.Count > 0)
+                                    yoloThread = new Thread(() =>
                                     {
-                                        Bitmap bmpResult = saveFlameInfo(yoloImage, result);
-                                        bmp = new Bitmap(bmpResult, resize);
+                                        using (Mat yoloImage = matImage.Clone())
+                                        {
+                                            var result = DoYoLo(yoloImage);
 
-                                        pbResult.Invoke((MethodInvoker)delegate ()
-                                        {
-                                            pbResult.Image = bmp;
-                                            pbResult.Update();
-                                        });
-                                        noFireWatch.Reset();
-                                        if (!noFireWatch.IsRunning) noFireWatch.Start();
-                                    }
-                                    else
-                                    {
-                                        if (noFireWatch.ElapsedMilliseconds > 1000 * NO_FIRE_WAIT_TIME)
-                                        {
-                                            noFireWatch.Stop();
-                                            noFireWatch.Reset();
-                                            resetState();
+                                            //if (result.Count > 0 && checkROIin(result))
+                                            if (result != null && result.Count > 0)
+                                            {
+                                                Bitmap bmpResult = saveFlameInfo(yoloImage, result);
+                                                bmp = new Bitmap(bmpResult, resize);
+
+                                                pbResult.Invoke((MethodInvoker)delegate ()
+                                                {
+                                                    pbResult.Image = bmp;
+                                                    pbResult.Update();
+                                                });
+                                                noFireWatch.Reset();
+                                                if (!noFireWatch.IsRunning) noFireWatch.Start();
+                                            }
+                                            else
+                                            {
+                                                if (noFireWatch.ElapsedMilliseconds > 1000 * NO_FIRE_WAIT_TIME)
+                                                {
+                                                    noFireWatch.Stop();
+                                                    noFireWatch.Reset();
+                                                    resetState();
+                                                }
+                                            }
                                         }
-                                    }
+                                    });
+                                    yoloThread.Start();
                                 }
-                            });
-                            t.Start();
-
-                            stopwatch.Reset();
-                            stopwatch.Start();
+                                else
+                                {
+                                    yoloThread.Abort();
+                                }
+                                stopwatch.Reset();
+                                stopwatch.Start();
+                            }
                         }
-                    }
-                    //if (Cv2.WaitKey(1) >= 0) break;
+                        if (Cv2.WaitKey(1) >= 0) doPlay = false;
+                    }//while(doPlay)
+                     //if (vWriter != null) vWriter.Release();
                 }
-                //if (vWriter != null) vWriter.Release();
-            }
-            video = null;
+                try
+                {
+                    if (video != null)
+                    {
+                        video.Release();
+                        video.Dispose();
+                    }
+                    video = InitVideoCapture();
+                    Console.WriteLine("{0} {1}", DateTime.Now, "InitVideoCapture()");
+                    doPlay = true;
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("E1: " + e.StackTrace);
+                    Console.WriteLine("E2: " + e.Message);
+                    Console.WriteLine("E3: " + e.Source);
+                    Console.WriteLine("E4: " + e.ToString());
+                }
+                Thread.Sleep(1000);
+            }//while
         }
 
         class FlameInfo
@@ -1187,21 +1374,23 @@ namespace RealtimeFireDetection
 
             InitSerialPort();
 
+            btOpenCam.Enabled = false;
 
-            doPlay = true;
             //bMin = DateTime.Now.Minute;
             //CamThread = new Thread(playCam)
-            /*            CamThread = new Thread(RunFlameMonitor)
-                        {
-                            Name = "Camera Thread"
-                        };
-                        CamThread.Start();
-            */
-            CamThread = new Thread(PlayAndRecord)
-            {
-                Name = "Camera Thread"
-            };
-            CamThread.Start();
+
+            //CamThread = new Thread(RunFlameMonitor)
+            //{
+            //    Name = "Camera Thread"
+            //};
+            //CamThread.Start();
+
+            //20240307
+            //CamThread = new Thread(PlayAndRecord)
+            //{
+            //    Name = "Camera Thread"
+            //};
+            //CamThread.Start();
         }
 
         private void InitSerialPort()
@@ -1387,21 +1576,24 @@ namespace RealtimeFireDetection
                             LoRaSendStart = false;
                             threadStep++;
                         }
+                        else if (ReportState)
+                        {
+                            ReportState = false;
+                            threadStep = 20;
+                        }
+                        else if (ResponseStart)
+                        {
+                            ResponseStart = false;
+                            threadStep = 30;
+                        }
                         break;
                     case 1:
-                        if(listOfResponse.Count > 0)
+                        bs = MakeDataFrame4LoRa();
+                        if (bs == null || bs.Length == 0)
                         {
-                            threadStep = 10;
+                            threadStep = 0;
                         }
-                        else
-                        {
-                            bs = MakeDataFrame4LoRa();
-                            if (bs == null || bs.Length == 0)
-                            {
-                                threadStep = 0;
-                            }
-                            else threadStep++;
-                        }
+                        else threadStep++;
                         break;
 
                     case 2:
@@ -1410,7 +1602,24 @@ namespace RealtimeFireDetection
                         bStep = 0;
                         break;
                     //////////////////////////////////////////////////////////////////////////////////////////
-                    case 10:
+                    ///상태 주기 보고 (CPU, Memory, HDD, LoRa, CCTV)
+                    case 20:
+                        bs = systemInfo.GetBytes();
+                        if(bs == null || bs.Length == 0)
+                        {
+                            threadStep = 0;
+                        }
+                        else threadStep++;
+                        break;
+                    case 21:
+                        sendLoraData(bs, 0, bs.Length, 0x81);
+                        threadStep = 100;
+                        Console.WriteLine("{0} Done. state report.", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"));
+                        bStep = 0;
+                        break;
+                    //////////////////////////////////////////////////////////////////////////////////////////
+                    ///제어 명령에 대한 응답 전송
+                    case 30:
                         if(listOfResponse.Count > 0)
                         {
                             bs = listOfResponse[0];
@@ -1423,10 +1632,10 @@ namespace RealtimeFireDetection
                             threadStep = 0;
                         }
                         break;
-                    case 11:
+                    case 31:
                         sendLoraData(bs, 0, bs.Length, 0x72);
                         threadStep = 100;
-                        bStep = 10;
+                        bStep = 30;
                         break;
                     //////////////////////////////////////////////////////////////////////////////////////////
                     case 100: //데이터 전송 후 대기 약 8초
@@ -1497,7 +1706,7 @@ namespace RealtimeFireDetection
             return StrByte;
         }
 
-        private byte[] dateTimeToByteArray(DateTime dateTime)
+        public byte[] dateTimeToByteArray(DateTime dateTime)
         {
             //byte[] b = new byte[1];
             //b[0] = (byte)(dateTime.Millisecond / 10);
@@ -1522,6 +1731,7 @@ namespace RealtimeFireDetection
                 lastLoRaTxRxTime = DateTime.Now;
                 string tmp = "";
                 StringBuilder sb = new StringBuilder();
+                systemInfo.StateLoRaModem = true;   //모뎀에서 무엇이든 출력이 된다면 모뎀 상태는 정상
                 if (rbLoRaReceiveASCII)
                 {
                     try
@@ -1536,7 +1746,6 @@ namespace RealtimeFireDetection
                         tmp = LoRa_sb.ToString();
                         if (tmp.ToUpper().Contains("LEN") && tmp.ToUpper().Contains("02") && tmp.ToUpper().Contains("ACK"))
                         {
-
                             tmp = takeRealRecvFrame(tmp);
                             if (tmp.Length == 0)
                             {
@@ -1656,7 +1865,7 @@ namespace RealtimeFireDetection
 
             //화재감시 설정 응답 (0x72)
             listOfResponse.Add(lbs.ToArray());
-            LoRaSendStart = true;
+            ResponseStart = true;
         }
 
         private void ParsingLoRaMessage(byte[] bs)
@@ -1685,21 +1894,6 @@ namespace RealtimeFireDetection
             //10. 0A : diagonalMinChange
             //11. 1A : CRC 0
             //12. E6 : CRC 1
-
-
-        //private int fireCheckDuration = 10;
-        ////FRAME_COUNT_WARN=10
-        //private int frameCountWarn = 10;
-        ////WARN_THRESHOLD(%)=50
-        //private double thresholdWarnRate = 0.5;
-        ////FRAME_COUNT_OCCUR=10
-        //private int frameCountOccur = 10;
-        ////OCCUR_THRESHOLD(%)=50
-        //private double thresholdOccurRate = 0.5;
-
-        //private int NO_FIRE_WAIT_TIME = 10;
-        //public static double STANDARD_DEVIATION_LOW_LIMIT = 1.0;
-
 
             try
             {
@@ -1751,7 +1945,7 @@ namespace RealtimeFireDetection
                     lbs.Add(0x00);  //보고
                     lbs.Add(bs[5]); lbs.Add(bs[6]); lbs.Add(bs[7]); lbs.Add(bs[8]); lbs.Add(bs[9]); lbs.Add(bs[10]);
                     listOfResponse.Add(lbs.ToArray());
-                    LoRaSendStart = true;
+                    ResponseStart = true;
                 }
 
             }
@@ -1818,6 +2012,8 @@ namespace RealtimeFireDetection
             bThreadDoWorkRun = true;
             Logger.Logger.WriteLog(out message, Logger.LogType.Info, "============== Start LoRa thread ================", true);
             threadDoWork.Start();
+
+            timer1.Enabled = true;
 
         }
 
@@ -2118,6 +2314,356 @@ namespace RealtimeFireDetection
         private void btResTest_Click(object sender, EventArgs e)
         {
             TestManualResponse();
+        }
+
+        private void btOpenCam_Click(object sender, EventArgs e)
+        {
+            btOpenCam.Enabled = false;
+            //Thread t = new Thread(() => PlayAndRecord(10));
+            //t.Start();
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            DateTime now = DateTime.Now;
+            if (bMin == now.Minute) return;
+            bMin = now.Minute;
+
+
+            Thread info = new Thread(() => { GetSystemInfo(); })
+            {
+                Name = "GetSystemInfo"
+            };
+            info.Start();
+
+            if (bMin == 15)
+            {
+                Thread t = new Thread(DeleteOldRecordFiles)
+                {
+                    Name = "OldFileRemover"
+                };
+                t.Start();
+            }
+
+            if (bMin % 2 == 0)
+            {
+                if (systemInfo.IsUpdated)
+                {
+                    ReportState = true;
+                    Console.WriteLine("{0} Start state report.", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"));
+                    systemInfo.IsUpdated = false;
+                }
+            }
+        }
+
+        public void DeleteOldRecordFiles()
+        {
+            try
+            {
+                ////////////////////////////////////////////////////////////////////////////////////
+                int count = 0;
+                DirectoryInfo logFolderInfo = new DirectoryInfo("./records");
+                DateTime cmpTime = DateTime.Now.AddHours(1 * -1);
+                DateTime fileCreatedTime;
+
+                foreach (FileInfo file in logFolderInfo.GetFiles())
+                {
+                    fileCreatedTime = file.CreationTime;
+                    Console.WriteLine("Last time {0}, {1}", fileCreatedTime.ToString("yyyyMMdd-HHmmss"), cmpTime.ToString("yyyyMMdd-HHmmss"));
+                    if (DateTime.Compare(fileCreatedTime, cmpTime) <= 0)
+                    {
+                        File.Delete(file.FullName);
+                    }
+                }
+                if (count > 0)
+                {
+                    Console.WriteLine();
+                }
+            }
+            catch (Exception e)
+            {
+            }
+        }
+
+        private void GetSystemInfo()
+        {
+            string tmp = "";
+
+            using (var wmi = new ManagementObjectSearcher("select * from Win32_PerfFormattedData_PerfOS_Processor where Name != '_Total'"))
+            {
+                var cpuUsages = wmi.Get().Cast<ManagementObject>().Select(mo => (long)(ulong)mo["PercentProcessorTime"]);
+                var totalUsage = cpuUsages.Average();
+                systemInfo.CpuUsage = totalUsage;
+                //tmp += $"CPU : {totalUsage:0.###}%";
+                //Console.WriteLine(tmp);
+            }
+
+            tmp = "";
+            using (var wmi = new ManagementObjectSearcher("select * from Win32_OperatingSystem"))
+            {
+                IEnumerable<ManagementObject> ienum = wmi.Get().Cast<ManagementObject>();
+
+                foreach (ManagementObject mo in ienum)
+                {
+                    systemInfo.TotalMemSize = ulong.Parse(mo["TotalVisibleMemorySize"].ToString());
+                    systemInfo.FreeMemSize = ulong.Parse(mo["FreePhysicalMemory"].ToString());
+                    break;
+                }
+                //var infor = wmi.Get().Cast<ManagementObject>().Select(mo => new SystemInfo()
+                //{
+                //    TotalSize = ulong.Parse(mo["TotalVisibleMemorySize"].ToString()),
+                //    FreeSize = ulong.Parse(mo["FreePhysicalMemory"].ToString()),
+                //}
+                //).FirstOrDefault();
+
+                //tmp += $"RAM : {systemInfo.TotalMemSize / 1024 / 1024}GB, {systemInfo.UsedMemSize / 1024 / 1024}GB, {systemInfo.MemUsage:0.##}%, {systemInfo.FreeMemSize / 1024 / 1024}GB";
+                //Console.WriteLine(tmp);
+            }
+
+            DriveInfo[] diDrives = DriveInfo.GetDrives();
+            if(systemInfo.drives.Count > 0)
+            {
+                systemInfo.drives[0] = diDrives[0];
+            }
+            else
+            {
+                foreach (DriveInfo info in diDrives)
+                {
+                    systemInfo.drives.Add(info);
+                    //Console.WriteLine("{0} : Total {1}GB, Free {2}GB", info.Name, info.TotalSize / 1024 / 1024 / 1024, info.TotalFreeSpace / 1024 / 1024 / 1024);
+                }
+            }
+
+            try
+            {
+                ManagementObjectSearcher mos = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM MSAcpi_ThermalZoneTemperature");
+                foreach (ManagementObject mo in mos.Get())
+                {
+                    Double temp = Convert.ToDouble(mo["CurrentTemperature"].ToString());
+                    systemInfo.Temperature = (temp - 2732) / 10.0;
+                    //Console.WriteLine("{0}, {1:0.0##}", mo["InstanceName"], temp);
+                }
+                //Console.WriteLine(systemInfo.ToString());
+            }
+            catch (Exception ex)
+            {
+            }
+            systemInfo.CollectTime = DateTime.Now;
+            systemInfo.IsUpdated = true;
+        }
+
+        public class UpdateVisitor : IVisitor
+        {
+            public void VisitComputer(IComputer computer)
+            {
+                computer.Traverse(this);
+            }
+
+            public void VisitHardware(IHardware hardware)
+            {
+                hardware.Update();
+                foreach (IHardware subHardware in hardware.SubHardware) subHardware.Accept(this);
+            }
+
+            public void VisitSensor(ISensor sensor) { }
+            public void VisitParameter(IParameter parameter) { }
+        }
+
+        public void GetSystemInfo4Win10()
+        {
+            UpdateVisitor updateVisitor = new UpdateVisitor();
+            Computer computer = new Computer();
+            computer.Open();
+            computer.CPUEnabled = true;
+            computer.Accept(updateVisitor);
+            for (int i = 0; i < computer.Hardware.Length; i++)
+            {
+                if (computer.Hardware[i].HardwareType == HardwareType.CPU)
+                {
+                    for (int j = 0; j < computer.Hardware[i].Sensors.Length; j++)
+                    {
+                        if (computer.Hardware[i].Sensors[j].SensorType == SensorType.Temperature)
+                            Console.WriteLine(computer.Hardware[i].Sensors[j].Name + ":" + computer.Hardware[i].Sensors[j].Value.ToString() + "\r");
+                    }
+                }
+            }
+            computer.Close();
+        }
+
+        class SystemInfo
+        {
+            MainForm mainForm;
+
+            public DateTime CollectTime { get; set; }
+
+            public bool IsUpdated { get; set; }
+
+            public bool StateLoRaModem = false;
+            public bool StateCCTV = false;
+
+            public double CpuUsage { get; set; }
+            /// <summary>
+            /// 전체 용량
+            /// </summary>
+            public ulong TotalMemSize { get; set; }
+
+            /// <summary>
+            /// 남은 용량
+            /// </summary>
+            public ulong FreeMemSize { get; set; }
+
+            /// <summary>
+            /// (readonly) 사용량
+            /// </summary>
+            public ulong UsedMemSize => TotalMemSize - FreeMemSize;
+
+            /// <summary>
+            /// (readonly) 사용률 
+            /// </summary>
+            public double MemUsage => ((double)(UsedMemSize) / (double)TotalMemSize) * 100;
+
+            public double Temperature { get; set; }
+
+            public List<DriveInfo> drives { get; set; }
+
+            public SystemInfo(MainForm mainForm)
+            {
+                this.mainForm = mainForm;
+                drives = new List<DriveInfo>();
+            }
+
+            public byte[] GetBytes()
+            {
+                List<byte> lbs = new List<byte>();
+                byte[] btmp;
+                byte b;
+
+                btmp = mainForm.dateTimeToByteArray(DateTime.Now);
+                lbs.AddRange(btmp);
+                btmp = mainForm.dateTimeToByteArray(CollectTime);
+                lbs.AddRange(btmp);
+
+                //CPU
+                btmp = BitConverter.GetBytes((short)(CpuUsage * 10));
+                Array.Reverse(btmp);
+                lbs.AddRange(btmp);
+                
+                //Memory
+                btmp = BitConverter.GetBytes((short)((TotalMemSize * 10 / (1024 * 1024))));
+                Array.Reverse(btmp); 
+                lbs.AddRange(btmp);
+                btmp = BitConverter.GetBytes((short)(FreeMemSize * 10 / (1024 * 1024)));
+                Array.Reverse(btmp); 
+                lbs.AddRange(btmp);
+                
+                //HDD
+                btmp = drives.Count > 0 ? BitConverter.GetBytes((short)(drives[0].TotalSize * 10 / (1024 * 1024 * 1024))) : BitConverter.GetBytes((short)0);
+                Array.Reverse(btmp); 
+                lbs.AddRange(btmp);
+                btmp = drives.Count > 0 ? BitConverter.GetBytes((short)(drives[0].AvailableFreeSpace * 10 / (1024 * 1024 * 1024))) : BitConverter.GetBytes((short)0);
+                Array.Reverse(btmp); 
+                lbs.AddRange(btmp);
+
+                //Temperature
+                btmp = BitConverter.GetBytes((short)0);
+                Array.Reverse(btmp); 
+                lbs.AddRange(btmp);
+                
+                b = LoRaSerialPort.IsOpen ? (byte)0x01 : (byte)0x00; lbs.Add(b);
+                b = StateLoRaModem ? (byte)0x01 : (byte)0x00; lbs.Add(b);
+                b = StateCCTV ? (byte)0x01 : (byte)0x00; lbs.Add(b);
+
+                Console.WriteLine("{0} System Info: {1}", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff"), ToString());
+                return lbs.ToArray();
+            }
+
+            override public string ToString()
+            {
+                StringBuilder sb = new StringBuilder();
+                
+                sb.Append(string.Format("CPU : {0:0.0##}%", CpuUsage)).Append("\r\n");
+                sb.Append($"RAM : {TotalMemSize / (1024 * 1024) * 10}B, {UsedMemSize / (1024 * 1024) * 10}B, {MemUsage:0.##}%, {FreeMemSize / (1024 * 1024) * 10}B").Append("\r\n"); ;
+                foreach (DriveInfo info in drives)
+                {
+                    sb.Append(string.Format("HDD : {0} Total {1}B, Free {2}B", info.Name, info.TotalSize / (1024 * 1024 * 1024) * 10, info.TotalFreeSpace / (1024 * 1024 * 1024) * 10)).Append("\r\n");
+                }
+                sb.Append(string.Format("Temp : {0:0.0##}", Temperature)).Append("\r\n");
+
+                return sb.ToString();
+            }
+        }
+
+        ///////////////////////////////////////////////////////////////////////////
+        /// <summary>
+        /// UDP Client
+        /// </summary>
+        private int udpPort = 2306;
+        private UdpClient client;
+        bool runClient = false;
+
+        public void initUdpClient()
+        {
+            Thread socketThread = new Thread(new ThreadStart(udpClientStart));
+            socketThread.IsBackground = true;
+            socketThread.Start();
+        }
+        private void udpClientStart()
+        {
+            client = new UdpClient(udpPort);
+
+            // 클라이언트 IP를 담을 변수
+            IPEndPoint remoteEP = new IPEndPoint(IPAddress.Parse("127.0.0.1"), udpPort);
+            runClient = true;
+            LogMessage msg;
+            Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("UDP client 시작"), true);
+            AddLogMessage(msg);
+            string[] tmps;
+            string tmp = "";
+            Thread thread = null;
+            int tCount = 0;
+
+            while (runClient)
+            {
+                try
+                {
+                    byte[] dgram = client.Receive(ref remoteEP);
+                    Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("[UDP] {0} 로부터 {1} 바이트 수신", remoteEP.ToString(), dgram.Length), true);
+                    AddLogMessage(msg);
+                    //DateTime cmpTime = DateTime.ParseExact(strDate, "yyyyMMdd", null);
+                    tmp = Encoding.UTF8.GetString(dgram);
+                    //tmp: AVI,filename.avi
+                    if (tmp != null && tmp.Length > 0 && tmp.ToLower().StartsWith("avi"))
+                    {
+                        tCount = 0;
+                        systemInfo.StateCCTV = true;
+                        Logger.Logger.WriteLog(out msg, LogType.Info, string.Format("[UDP] {0} ", Encoding.UTF8.GetString(dgram)), true);
+                        AddLogMessage(msg);
+                        tmps = tmp.Split(',');
+                        if(thread == null || !thread.IsAlive)
+                        {
+                            thread = new Thread(() => FlameDetector(tmps[1]));
+                            thread.IsBackground = true;
+                            thread.Start();
+                        }
+                    }
+
+                    // (3) 데이타 송신
+                    //srv.Send(dgram, dgram.Length, remoteEP);
+                    //Console.WriteLine("[Send] {0} 로 {1} 바이트 송신", remoteEP.ToString(), dgram.Length);
+                    //Console.WriteLine("[Send] {0} ", Encoding.UTF8.GetString(dgram));
+                }
+                catch (Exception e)
+                {
+                    if (client != null) client = new UdpClient(udpPort);
+                    remoteEP = new IPEndPoint(IPAddress.Parse("127.0.0.1"), udpPort);
+                }
+                tCount++;
+                if(tCount > 10 * 60 * 10) { //10분 동안..
+                    systemInfo.StateCCTV = false;
+                    tCount = 0;
+                }
+                Thread.Sleep(100);
+            }
         }
     }
 }
